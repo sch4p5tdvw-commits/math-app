@@ -10,5 +10,5 @@ window.FIREBASE_CONFIG = {
   storageBucket: "math-app-9eb64.firebasestorage.app",
   messagingSenderId: "150130041790",
   appId: "1:150130041790:web:bc183dc13be82c75d38fef",
-  databaseURL: "",
+  databaseURL: "https://math-app-9eb64-default-rtdb.asia-southeast1.firebasedatabase.app",
 };
