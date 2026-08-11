@@ -18,6 +18,7 @@ let state = null;
 let currentEntryId = null;
 let audioCtx = null;
 let correctAudio = null;
+let wrongAudio = null;
 
 // ===== ユーティリティ =====
 function randInt(min, max) {
@@ -68,12 +69,21 @@ function playCorrectSound() {
   correctAudio.play().catch(() => playSynthCorrectSound());
 }
 
-function playWrongSound() {
+function playSynthWrongSound() {
   const ctx = getAudioContext();
   if (!ctx) return;
   const now = ctx.currentTime;
   playTone(ctx, 180, now, 0.18, "sawtooth", 0.2); // ブッ
   playTone(ctx, 160, now + 0.22, 0.3, "sawtooth", 0.2); // ブー
+}
+
+function playWrongSound() {
+  if (!wrongAudio) {
+    wrongAudio = new Audio("sounds/wrong.mp3");
+    wrongAudio.preload = "auto";
+  }
+  wrongAudio.currentTime = 0;
+  wrongAudio.play().catch(() => playSynthWrongSound());
 }
 
 function generateProblem(level) {
