@@ -20,7 +20,6 @@ const DATA_VERSION_KEY = "mathapp_data_version";
 const DATA_VERSION = "2";
 const MAX_ANSWER_DIGITS = 3;
 const WRONG_ANSWER_PENALTY_SEC = 3;
-const FIREBASE_SDK_VERSION = "10.12.2";
 
 // ===== 状態 =====
 let state = null;
@@ -71,36 +70,64 @@ function normalizeGroupCode(raw) {
   return raw.trim().toLowerCase().replace(/[^0-9a-z぀-ヿ一-鿿]/g, "").slice(0, 20);
 }
 
-// ===== クラウドどうき（Firebase）=====
-// クラウドが使えない場合でもアプリが動くよう、読み込み失敗は握りつぶして
-// 端末内（localStorage）だけで動作させる。
-async function initCloud() {
+// ===== クラウドどうき（Firestore REST API）=====
+// SDK を CDN から読み込まず REST を直接使う。読み込むファイルが増えないぶん
+// 起動が速く、CDN が使えない環境でもアプリが動く。
+// 通信に失敗した場合は端末内（localStorage）だけで動作させる。
+function initCloud() {
   const config = window.FIREBASE_CONFIG;
-  if (!config || !config.apiKey) return false;
-  try {
-    const base = `https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}`;
-    const [appMod, fsMod] = await Promise.all([
-      import(`${base}/firebase-app.js`),
-      import(`${base}/firebase-firestore.js`),
-    ]);
-    const app = appMod.initializeApp(config);
-    cloud = { db: fsMod.getFirestore(app), api: fsMod };
-    return true;
-  } catch {
-    cloud = null;
-    return false;
-  }
+  if (!config || !config.apiKey || !config.projectId) return false;
+  cloud = {
+    apiKey: config.apiKey,
+    baseUrl: `https://firestore.googleapis.com/v1/projects/${config.projectId}/databases/(default)/documents`,
+  };
+  return true;
 }
 
-function scoresCollection() {
-  const { db, api } = cloud;
-  return api.collection(db, "groups", getGroupCode(), "scores");
+function scoresUrl(extraParams) {
+  const params = new URLSearchParams({ key: cloud.apiKey, ...extraParams });
+  return `${cloud.baseUrl}/groups/${encodeURIComponent(getGroupCode())}/scores?${params}`;
+}
+
+// Firestore の型つき JSON と、ふつうのオブジェクトを相互に変換する
+function toFirestoreFields(obj) {
+  const fields = {};
+  Object.entries(obj).forEach(([key, value]) => {
+    if (value === null || value === undefined) {
+      fields[key] = { nullValue: null };
+    } else if (typeof value === "number") {
+      fields[key] = Number.isInteger(value)
+        ? { integerValue: String(value) }
+        : { doubleValue: value };
+    } else if (typeof value === "boolean") {
+      fields[key] = { booleanValue: value };
+    } else {
+      fields[key] = { stringValue: String(value) };
+    }
+  });
+  return fields;
+}
+
+function fromFirestoreFields(fields) {
+  const obj = {};
+  Object.entries(fields || {}).forEach(([key, wrapper]) => {
+    if ("integerValue" in wrapper) obj[key] = Number(wrapper.integerValue);
+    else if ("doubleValue" in wrapper) obj[key] = Number(wrapper.doubleValue);
+    else if ("booleanValue" in wrapper) obj[key] = wrapper.booleanValue;
+    else if ("nullValue" in wrapper) obj[key] = null;
+    else obj[key] = wrapper.stringValue;
+  });
+  return obj;
 }
 
 async function pushScoreToCloud(entry) {
   if (!cloud || !getGroupCode()) return;
   try {
-    await cloud.api.addDoc(scoresCollection(), entry);
+    await fetch(scoresUrl(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: toFirestoreFields(entry) }),
+    });
   } catch {
     // 送信に失敗しても端末内には残っているので、そのまま続行する
   }
@@ -108,12 +135,24 @@ async function pushScoreToCloud(entry) {
 
 async function fetchScoresFromCloud() {
   if (!cloud || !getGroupCode()) return [];
+  const all = [];
+  let pageToken = "";
   try {
-    const snap = await cloud.api.getDocs(scoresCollection());
-    return snap.docs.map((d) => d.data());
+    // ページ分割されている場合にそなえて、最大数ページまで読む
+    for (let page = 0; page < 5; page++) {
+      const params = { pageSize: "300" };
+      if (pageToken) params.pageToken = pageToken;
+      const res = await fetch(scoresUrl(params));
+      if (!res.ok) return all;
+      const data = await res.json();
+      (data.documents || []).forEach((doc) => all.push(fromFirestoreFields(doc.fields)));
+      if (!data.nextPageToken) break;
+      pageToken = data.nextPageToken;
+    }
   } catch {
-    return [];
+    // オフラインなど。取れたぶんだけ返す
   }
+  return all;
 }
 
 // クラウドと端末内の記録を、id をキーに重複を除いて合わせる
@@ -633,7 +672,7 @@ async function init() {
   renderLevelGrid();
 
   // クラウドが使えるかどうかに関わらず、まず今ある情報で画面を出す
-  const cloudReady = await initCloud();
+  const cloudReady = initCloud();
 
   if (cloudReady && !getGroupCode()) {
     showScreen("screen-group");
