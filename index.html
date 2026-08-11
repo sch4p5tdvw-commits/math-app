@@ -48,9 +48,9 @@
           <input type="radio" name="mode" value="normal" checked>
           <span>もんだいすうモード</span>
           <select id="question-count">
-            <option value="10">10もん</option>
-            <option value="20">20もん</option>
-            <option value="30">30もん</option>
+            <option value="30" selected>30もん</option>
+            <option value="50">50もん</option>
+            <option value="100">100もん</option>
           </select>
         </label>
         <label class="mode-chip">
@@ -78,7 +78,11 @@
           <option value="4">レベル4</option>
         </select>
       </div>
-      <div id="ranking-list" class="history-list"></div>
+      <h3 class="ranking-subhead">もんだいすうモード（はやさじゅん）</h3>
+      <div id="ranking-normal-list" class="history-list"></div>
+
+      <h3 class="ranking-subhead">タイムアタック（せいかいすうじゅん）</h3>
+      <div id="ranking-timeattack-list" class="history-list"></div>
     </div>
   </section>
 
