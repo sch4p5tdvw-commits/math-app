@@ -17,6 +17,7 @@ const MAX_ANSWER_DIGITS = 3;
 let state = null;
 let currentEntryId = null;
 let audioCtx = null;
+let correctAudio = null;
 
 // ===== ユーティリティ =====
 function randInt(min, max) {
@@ -50,12 +51,21 @@ function playTone(ctx, freq, startTime, duration, type, peakGain) {
   osc.stop(startTime + duration + 0.02);
 }
 
-function playCorrectSound() {
+function playSynthCorrectSound() {
   const ctx = getAudioContext();
   if (!ctx) return;
   const now = ctx.currentTime;
   playTone(ctx, 880, now, 0.15, "sine", 0.25); // ピン
   playTone(ctx, 659, now + 0.15, 0.3, "sine", 0.25); // ポーン
+}
+
+function playCorrectSound() {
+  if (!correctAudio) {
+    correctAudio = new Audio("sounds/correct.mp3");
+    correctAudio.preload = "auto";
+  }
+  correctAudio.currentTime = 0;
+  correctAudio.play().catch(() => playSynthCorrectSound());
 }
 
 function playWrongSound() {

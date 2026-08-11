@@ -1,4 +1,4 @@
-const CACHE_NAME = "mathapp-cache-v2";
+const CACHE_NAME = "mathapp-cache-v3";
 const ASSETS = [
   "./",
   "./index.html",
@@ -7,6 +7,7 @@ const ASSETS = [
   "./manifest.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
+  "./sounds/correct.mp3",
 ];
 
 self.addEventListener("install", (event) => {
