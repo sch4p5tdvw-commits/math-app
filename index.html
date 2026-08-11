@@ -20,8 +20,24 @@
 <div class="app">
   <h1 class="app-title">🧮 さんすうチャレンジ</h1>
 
+  <!-- プレイヤーとうろく画面 -->
+  <section id="screen-player" class="screen" hidden>
+    <div class="card">
+      <h2>なまえを とうろくしてね</h2>
+      <form id="player-form" class="name-entry" autocomplete="off">
+        <input type="text" id="player-name-input" class="name-input" maxlength="10" placeholder="なまえ（10もじまで）" required>
+        <button type="submit" class="btn btn-primary">とうろくする</button>
+      </form>
+    </div>
+  </section>
+
   <!-- スタート画面 -->
-  <section id="screen-start" class="screen">
+  <section id="screen-start" class="screen" hidden>
+    <div class="card player-bar">
+      <span id="player-display"></span>
+      <button type="button" id="btn-switch-player" class="btn-link">ちがうひとであそぶ</button>
+    </div>
+
     <div class="card">
       <h2>レベルをえらんでね</h2>
       <div class="level-grid" id="level-grid"></div>
@@ -52,8 +68,17 @@
     </div>
 
     <div class="card">
-      <h2>きろく</h2>
-      <div id="history-list" class="history-list"></div>
+      <div class="ranking-header">
+        <h2>ランキング</h2>
+        <select id="ranking-level-filter" class="filter-select">
+          <option value="all">すべてのレベル</option>
+          <option value="1">レベル1</option>
+          <option value="2">レベル2</option>
+          <option value="3">レベル3</option>
+          <option value="4">レベル4</option>
+        </select>
+      </div>
+      <div id="ranking-list" class="history-list"></div>
     </div>
   </section>
 
@@ -93,13 +118,6 @@
     <div class="card">
       <h2 id="result-title">けっか</h2>
       <div class="result-stats" id="result-stats"></div>
-
-      <form id="name-entry" class="name-entry" autocomplete="off">
-        <label for="player-name">なまえを にゅうりょくしてね</label>
-        <input type="text" id="player-name" class="name-input" maxlength="10" placeholder="なまえ（10もじまで）">
-        <button type="submit" class="btn btn-primary">きろくする</button>
-      </form>
-      <div id="name-saved-msg" class="name-saved-msg" hidden>きろくしました！ 🎉</div>
 
       <button id="btn-retry" class="btn btn-primary">もういちど</button>
       <button id="btn-back" class="btn btn-secondary">さいしょの がめんへ</button>

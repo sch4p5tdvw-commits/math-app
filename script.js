@@ -11,11 +11,11 @@ const LEVELS = [
 ];
 
 const HISTORY_KEY = "mathapp_history";
+const PLAYER_KEY = "mathapp_current_player";
 const MAX_ANSWER_DIGITS = 3;
 
 // ===== 状態 =====
 let state = null;
-let currentEntryId = null;
 let audioCtx = null;
 let correctAudio = null;
 let wrongAudio = null;
@@ -138,18 +138,26 @@ function saveHistoryEntry(entry) {
   saveHistory(history);
 }
 
-function updateHistoryEntryName(id, name) {
-  const history = loadHistory();
-  const entry = history.find((h) => h.id === id);
-  if (entry) {
-    entry.name = name;
-    saveHistory(history);
-  }
-}
-
 function formatDate(iso) {
   const d = new Date(iso);
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+// ===== プレイヤー =====
+function getCurrentPlayer() {
+  return localStorage.getItem(PLAYER_KEY) || null;
+}
+
+function setCurrentPlayer(name) {
+  localStorage.setItem(PLAYER_KEY, name);
+}
+
+function clearCurrentPlayer() {
+  localStorage.removeItem(PLAYER_KEY);
+}
+
+function renderPlayerBar() {
+  document.getElementById("player-display").textContent = `👤 ${getCurrentPlayer()} さん`;
 }
 
 // ===== 画面切り替え =====
@@ -181,19 +189,31 @@ function getSelectedLevel() {
   return btn ? Number(btn.dataset.level) : 1;
 }
 
-function renderHistory() {
-  const list = document.getElementById("history-list");
-  const history = loadHistory();
-  if (history.length === 0) {
+const RANK_MEDALS = ["🥇", "🥈", "🥉"];
+
+function renderRanking(levelFilter) {
+  const filter = levelFilter || document.getElementById("ranking-level-filter").value;
+  const player = getCurrentPlayer();
+  const list = document.getElementById("ranking-list");
+
+  let entries = loadHistory().filter((h) => h.name === player);
+  if (filter !== "all") {
+    entries = entries.filter((h) => h.level === Number(filter));
+  }
+  entries.sort((a, b) => b.accuracy - a.accuracy || b.correct - a.correct || new Date(b.date) - new Date(a.date));
+
+  if (entries.length === 0) {
     list.innerHTML = '<div class="history-empty">まだきろくがないよ</div>';
     return;
   }
-  list.innerHTML = history
-    .map((h) => {
+
+  list.innerHTML = entries
+    .map((h, i) => {
       const modeLabel = h.mode === "timeattack" ? `タイムアタック${h.timeLimit}秒` : `${h.total}もん`;
-      const nameLabel = h.name ? `${h.name} / ` : "";
+      const rank = RANK_MEDALS[i] || `${i + 1}位`;
       return `<div class="history-item">
-        <span>${nameLabel}${formatDate(h.date)} / Lv${h.level} / ${modeLabel}</span>
+        <span class="rank-badge">${rank}</span>
+        <span class="history-main">${formatDate(h.date)} / Lv${h.level} / ${modeLabel}</span>
         <span>${h.correct}問正解 (${h.accuracy}%)</span>
       </div>`;
     })
@@ -320,7 +340,7 @@ function finishQuiz() {
     date: new Date().toISOString(),
     level: state.level,
     mode: state.mode,
-    name: "",
+    name: getCurrentPlayer(),
     total: totalAnswered,
     correct: state.correct,
     wrong: state.wrong,
@@ -329,28 +349,9 @@ function finishQuiz() {
     elapsedSec,
   };
   saveHistoryEntry(entry);
-  currentEntryId = entry.id;
 
   renderResult(entry);
-  resetNameEntry();
   showScreen("screen-result");
-}
-
-function resetNameEntry() {
-  document.getElementById("name-entry").hidden = false;
-  document.getElementById("name-saved-msg").hidden = true;
-  document.getElementById("player-name").value = "";
-}
-
-function handleNameSubmit(e) {
-  e.preventDefault();
-  if (currentEntryId === null) return;
-  const nameInput = document.getElementById("player-name");
-  const name = nameInput.value.trim().slice(0, 10);
-  if (!name) return;
-  updateHistoryEntryName(currentEntryId, name);
-  document.getElementById("name-entry").hidden = true;
-  document.getElementById("name-saved-msg").hidden = false;
 }
 
 function renderResult(entry) {
@@ -368,9 +369,39 @@ function renderResult(entry) {
 }
 
 // ===== 初期化 =====
+function enterStartScreen() {
+  renderPlayerBar();
+  renderRanking("all");
+  showScreen("screen-start");
+}
+
 function init() {
   renderLevelGrid();
-  renderHistory();
+
+  if (getCurrentPlayer()) {
+    enterStartScreen();
+  } else {
+    showScreen("screen-player");
+  }
+
+  document.getElementById("player-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const input = document.getElementById("player-name-input");
+    const name = input.value.trim().slice(0, 10);
+    if (!name) return;
+    setCurrentPlayer(name);
+    input.value = "";
+    enterStartScreen();
+  });
+
+  document.getElementById("btn-switch-player").addEventListener("click", () => {
+    clearCurrentPlayer();
+    showScreen("screen-player");
+  });
+
+  document.getElementById("ranking-level-filter").addEventListener("change", (e) => {
+    renderRanking(e.target.value);
+  });
 
   document.getElementById("btn-start").addEventListener("click", startQuiz);
   document.getElementById("keypad").addEventListener("click", (e) => {
@@ -378,12 +409,8 @@ function init() {
     if (!btn) return;
     handleKeyPress(btn.dataset.key);
   });
-  document.getElementById("name-entry").addEventListener("submit", handleNameSubmit);
   document.getElementById("btn-retry").addEventListener("click", startQuiz);
-  document.getElementById("btn-back").addEventListener("click", () => {
-    renderHistory();
-    showScreen("screen-start");
-  });
+  document.getElementById("btn-back").addEventListener("click", enterStartScreen);
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
