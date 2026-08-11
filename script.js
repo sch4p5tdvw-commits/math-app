@@ -34,6 +34,7 @@ let correctAudio = null;
 let wrongAudio = null;
 let cloud = null; // { db, api } — クラウドが使えないときは null のまま
 let cloudScoreCache = [];
+let cloudPlayerCache = [];
 
 // ===== ユーティリティ =====
 function randInt(min, max) {
@@ -87,8 +88,42 @@ function initCloud() {
   return true;
 }
 
+function groupUrl(node) {
+  return `${cloud.baseUrl}/groups/${encodeURIComponent(getGroupCode())}/${node}.json`;
+}
+
 function scoresUrl() {
-  return `${cloud.baseUrl}/groups/${encodeURIComponent(getGroupCode())}/scores.json`;
+  return groupUrl("scores");
+}
+
+// なまえは記録とは別に保存する。記録から名前を逆算していると、
+// まだ1回も遊んでいない人の名前がほかの端末に伝わらないため。
+async function pushPlayerToCloud(name) {
+  if (!cloud || !getGroupCode()) return;
+  try {
+    await fetch(groupUrl("players"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+  } catch {
+    // 送信できなくても端末内には残るので、そのまま続行する
+  }
+}
+
+async function fetchPlayersFromCloud() {
+  if (!cloud || !getGroupCode()) return [];
+  try {
+    const res = await fetch(groupUrl("players"));
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (!data || typeof data !== "object") return [];
+    return Object.values(data)
+      .map((p) => (p && typeof p === "object" ? p.name : null))
+      .filter((n) => typeof n === "string" && n.length > 0);
+  } catch {
+    return [];
+  }
 }
 
 async function pushScoreToCloud(entry) {
@@ -130,7 +165,12 @@ function mergeScores(cloudScores, localScores) {
 }
 
 async function refreshCloudScores() {
-  cloudScoreCache = await fetchScoresFromCloud();
+  const [scores, players] = await Promise.all([
+    fetchScoresFromCloud(),
+    fetchPlayersFromCloud(),
+  ]);
+  cloudScoreCache = scores;
+  cloudPlayerCache = players;
 }
 
 // ===== 効果音 =====
@@ -339,10 +379,12 @@ function rememberPlayer(name) {
 function allKnownPlayerNames() {
   const names = loadPlayerList();
   const seen = new Set(names);
-  cloudScoreCache.forEach((s) => {
-    if (s.name && !seen.has(s.name)) {
-      seen.add(s.name);
-      names.push(s.name);
+  // クラウドに登録された名前と、記録にふくまれる名前の両方から拾う
+  const fromCloud = [...cloudPlayerCache, ...cloudScoreCache.map((s) => s && s.name)];
+  fromCloud.forEach((name) => {
+    if (name && !seen.has(name)) {
+      seen.add(name);
+      names.push(name);
     }
   });
   return names;
@@ -372,6 +414,10 @@ function renderPlayerList() {
 function selectPlayer(name) {
   rememberPlayer(name);
   setCurrentPlayer(name);
+  if (!cloudPlayerCache.includes(name)) {
+    cloudPlayerCache = [...cloudPlayerCache, name];
+    pushPlayerToCloud(name);
+  }
   enterStartScreen();
 }
 
@@ -687,6 +733,7 @@ async function init() {
     clearGroupCode();
     clearCurrentPlayer();
     cloudScoreCache = [];
+    cloudPlayerCache = [];
     showScreen("screen-group");
   });
 
