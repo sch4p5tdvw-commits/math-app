@@ -246,6 +246,16 @@ input {
   font-size: 0.9rem;
 }
 
+.ranking-subhead {
+  margin: 16px 0 8px;
+  font-size: 0.95rem;
+  color: var(--color-secondary-dark);
+}
+
+.ranking-subhead:first-of-type {
+  margin-top: 12px;
+}
+
 .quiz-card {
   text-align: center;
 }

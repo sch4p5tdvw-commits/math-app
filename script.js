@@ -12,6 +12,8 @@ const LEVELS = [
 
 const HISTORY_KEY = "mathapp_history";
 const PLAYER_KEY = "mathapp_current_player";
+const DATA_VERSION_KEY = "mathapp_data_version";
+const DATA_VERSION = "2";
 const MAX_ANSWER_DIGITS = 3;
 
 // ===== 状態 =====
@@ -23,6 +25,23 @@ let wrongAudio = null;
 // ===== ユーティリティ =====
 function randInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function shuffle(arr) {
+  const copy = arr.slice();
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = randInt(0, i);
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+// 記録の意味が変わるアップデート時に、既存の記録を一度だけリセットする
+function maybeResetHistory() {
+  if (localStorage.getItem(DATA_VERSION_KEY) !== DATA_VERSION) {
+    localStorage.removeItem(HISTORY_KEY);
+    localStorage.setItem(DATA_VERSION_KEY, DATA_VERSION);
+  }
 }
 
 // ===== 効果音 =====
@@ -86,38 +105,62 @@ function playWrongSound() {
   wrongAudio.play().catch(() => playSynthWrongSound());
 }
 
-function generateProblem(level) {
-  let a, b, answer, text;
-
+// レベルごとに考えられる問題パターンを全て列挙する
+function buildProblemBank(level) {
+  const problems = [];
   if (level === 1) {
     // 1桁 + 1桁、こたえも1桁 (合計が9以下)
-    a = randInt(1, 8);
-    b = randInt(1, 9 - a);
-    answer = a + b;
-    text = `${a} ＋ ${b}`;
+    for (let a = 1; a <= 8; a++) {
+      for (let b = 1; b <= 9 - a; b++) {
+        problems.push({ text: `${a} ＋ ${b} = ?`, answer: a + b });
+      }
+    }
   } else if (level === 2) {
     // 1桁 + 1桁、こたえは2桁 (合計が10以上)
-    a = randInt(1, 9);
-    const minB = Math.max(1, 10 - a);
-    b = randInt(minB, 9);
-    answer = a + b;
-    text = `${a} ＋ ${b}`;
+    for (let a = 1; a <= 9; a++) {
+      const minB = Math.max(1, 10 - a);
+      for (let b = minB; b <= 9; b++) {
+        problems.push({ text: `${a} ＋ ${b} = ?`, answer: a + b });
+      }
+    }
   } else if (level === 3) {
     // 1桁同士のひきざん、こたえは0以上
-    a = randInt(0, 9);
-    b = randInt(0, 9);
-    if (a < b) [a, b] = [b, a];
-    answer = a - b;
-    text = `${a} － ${b}`;
+    for (let a = 0; a <= 9; a++) {
+      for (let b = 0; b <= a; b++) {
+        problems.push({ text: `${a} － ${b} = ?`, answer: a - b });
+      }
+    }
   } else {
     // 2桁から1桁をひく
-    a = randInt(10, 99);
-    b = randInt(1, 9);
-    answer = a - b;
-    text = `${a} － ${b}`;
+    for (let a = 10; a <= 99; a++) {
+      for (let b = 1; b <= 9; b++) {
+        problems.push({ text: `${a} － ${b} = ?`, answer: a - b });
+      }
+    }
   }
+  return problems;
+}
 
-  return { text: `${text} = ?`, answer };
+const problemBanks = {};
+const problemDecks = {};
+const lastDrawnText = {};
+
+// 全パターンをシャッフルした「山札」から1問ずつ引く。山札を引き切ったら
+// 再シャッフルするが、その継ぎ目でも同じ問題が連続しないようにする。
+function drawProblem(level) {
+  if (!problemBanks[level]) problemBanks[level] = buildProblemBank(level);
+  let deck = problemDecks[level];
+  if (!deck || deck.length === 0) {
+    deck = shuffle(problemBanks[level]);
+    const last = lastDrawnText[level];
+    if (last && deck.length > 1 && deck[0].text === last) {
+      [deck[0], deck[1]] = [deck[1], deck[0]];
+    }
+    problemDecks[level] = deck;
+  }
+  const problem = deck.shift();
+  lastDrawnText[level] = problem.text;
+  return problem;
 }
 
 function loadHistory() {
@@ -191,33 +234,47 @@ function getSelectedLevel() {
 
 const RANK_MEDALS = ["🥇", "🥈", "🥉"];
 
+function renderRankingList(containerId, entries, compareFn, scoreLabelFn) {
+  const list = document.getElementById(containerId);
+  if (entries.length === 0) {
+    list.innerHTML = '<div class="history-empty">まだきろくがないよ</div>';
+    return;
+  }
+  const sorted = entries.slice().sort(compareFn);
+  list.innerHTML = sorted
+    .map((h, i) => {
+      const rank = RANK_MEDALS[i] || `${i + 1}位`;
+      return `<div class="history-item">
+        <span class="rank-badge">${rank}</span>
+        <span class="history-main">${formatDate(h.date)} / Lv${h.level}</span>
+        <span>${scoreLabelFn(h)}</span>
+      </div>`;
+    })
+    .join("");
+}
+
 function renderRanking(levelFilter) {
   const filter = levelFilter || document.getElementById("ranking-level-filter").value;
   const player = getCurrentPlayer();
-  const list = document.getElementById("ranking-list");
 
   let entries = loadHistory().filter((h) => h.name === player);
   if (filter !== "all") {
     entries = entries.filter((h) => h.level === Number(filter));
   }
-  entries.sort((a, b) => b.accuracy - a.accuracy || b.correct - a.correct || new Date(b.date) - new Date(a.date));
 
-  if (entries.length === 0) {
-    list.innerHTML = '<div class="history-empty">まだきろくがないよ</div>';
-    return;
-  }
+  renderRankingList(
+    "ranking-normal-list",
+    entries.filter((h) => h.mode === "normal"),
+    (a, b) => a.elapsedSec - b.elapsedSec || b.accuracy - a.accuracy || new Date(b.date) - new Date(a.date),
+    (h) => `${h.total}もん / ${h.elapsedSec}びょう (${h.accuracy}%)`
+  );
 
-  list.innerHTML = entries
-    .map((h, i) => {
-      const modeLabel = h.mode === "timeattack" ? `タイムアタック${h.timeLimit}秒` : `${h.total}もん`;
-      const rank = RANK_MEDALS[i] || `${i + 1}位`;
-      return `<div class="history-item">
-        <span class="rank-badge">${rank}</span>
-        <span class="history-main">${formatDate(h.date)} / Lv${h.level} / ${modeLabel}</span>
-        <span>${h.correct}問正解 (${h.accuracy}%)</span>
-      </div>`;
-    })
-    .join("");
+  renderRankingList(
+    "ranking-timeattack-list",
+    entries.filter((h) => h.mode === "timeattack"),
+    (a, b) => b.correct - a.correct || b.accuracy - a.accuracy || new Date(b.date) - new Date(a.date),
+    (h) => `${h.correct}問正解 (${h.timeLimit}秒, ${h.accuracy}%)`
+  );
 }
 
 // ===== クイズ開始 =====
@@ -276,7 +333,7 @@ function nextQuestion() {
     finishQuiz();
     return;
   }
-  const problem = generateProblem(state.level);
+  const problem = drawProblem(state.level);
   state.currentAnswer = problem.answer;
   state.inputBuffer = "";
   document.getElementById("quiz-question").textContent = problem.text;
@@ -376,6 +433,7 @@ function enterStartScreen() {
 }
 
 function init() {
+  maybeResetHistory();
   renderLevelGrid();
 
   if (getCurrentPlayer()) {
