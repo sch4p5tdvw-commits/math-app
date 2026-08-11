@@ -16,10 +16,54 @@ const MAX_ANSWER_DIGITS = 3;
 // ===== 状態 =====
 let state = null;
 let currentEntryId = null;
+let audioCtx = null;
 
 // ===== ユーティリティ =====
 function randInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+// ===== 効果音 =====
+function getAudioContext() {
+  if (!audioCtx) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return null;
+    audioCtx = new AudioContextClass();
+  }
+  if (audioCtx.state === "suspended") {
+    audioCtx.resume();
+  }
+  return audioCtx;
+}
+
+function playTone(ctx, freq, startTime, duration, type, peakGain) {
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0, startTime);
+  gain.gain.linearRampToValueAtTime(peakGain, startTime + 0.01);
+  gain.gain.linearRampToValueAtTime(0, startTime + duration);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(startTime);
+  osc.stop(startTime + duration + 0.02);
+}
+
+function playCorrectSound() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  playTone(ctx, 880, now, 0.15, "sine", 0.25); // ピン
+  playTone(ctx, 659, now + 0.15, 0.3, "sine", 0.25); // ポーン
+}
+
+function playWrongSound() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  playTone(ctx, 180, now, 0.18, "sawtooth", 0.2); // ブッ
+  playTone(ctx, 160, now + 0.22, 0.3, "sawtooth", 0.2); // ブー
 }
 
 function generateProblem(level) {
@@ -225,10 +269,12 @@ function submitAnswer() {
     state.correct += 1;
     feedback.textContent = "せいかい！ 🎉";
     feedback.className = "quiz-feedback correct";
+    playCorrectSound();
   } else {
     state.wrong += 1;
     feedback.textContent = `ざんねん… こたえは ${state.currentAnswer}`;
     feedback.className = "quiz-feedback wrong";
+    playWrongSound();
   }
 
   state.index += 1;
