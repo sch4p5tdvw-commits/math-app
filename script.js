@@ -4,12 +4,18 @@
 // レベル3: 1桁同士のひきざん（こたえは0いじょう）
 // レベル4: 2桁から1桁をひく ひきざん
 // レベル5: 1桁同士のかけざん
+// レベル6: 2桁×1桁のかけざん
+// レベル7: 2桁以下÷1桁のわりざん（わりきれるもの）
+// レベル8: 3桁÷1桁のわりざん（わりきれるもの）
 const LEVELS = [
   { id: 1, label: "レベル1", hint: "1けた＋1けた（こたえも1けた）" },
   { id: 2, label: "レベル2", hint: "1けた＋1けた（こたえは2けた）" },
   { id: 3, label: "レベル3", hint: "1けたどうしの ひきざん" },
   { id: 4, label: "レベル4", hint: "2けた－1けた の ひきざん" },
   { id: 5, label: "レベル5", hint: "1けたどうしの かけざん" },
+  { id: 6, label: "レベル6", hint: "2けた×1けた の かけざん" },
+  { id: 7, label: "レベル7", hint: "2けたいか÷1けた の わりざん" },
+  { id: 8, label: "レベル8", hint: "3けた÷1けた の わりざん" },
 ];
 
 const HISTORY_KEY = "mathapp_history";
@@ -220,11 +226,32 @@ function buildProblemBank(level) {
         problems.push({ text: `${a} － ${b} = ?`, answer: a - b });
       }
     }
-  } else {
+  } else if (level === 5) {
     // 1桁同士のかけざん
     for (let a = 1; a <= 9; a++) {
       for (let b = 1; b <= 9; b++) {
         problems.push({ text: `${a} × ${b} = ?`, answer: a * b });
+      }
+    }
+  } else if (level === 6) {
+    // 2桁 × 1桁のかけざん
+    for (let a = 10; a <= 99; a++) {
+      for (let b = 1; b <= 9; b++) {
+        problems.push({ text: `${a} × ${b} = ?`, answer: a * b });
+      }
+    }
+  } else if (level === 7) {
+    // 2桁以下 ÷ 1桁、わりきれるものだけ
+    for (let a = 1; a <= 99; a++) {
+      for (let b = 1; b <= 9; b++) {
+        if (a % b === 0) problems.push({ text: `${a} ÷ ${b} = ?`, answer: a / b });
+      }
+    }
+  } else {
+    // 3桁 ÷ 1桁、わりきれるものだけ
+    for (let a = 100; a <= 999; a++) {
+      for (let b = 1; b <= 9; b++) {
+        if (a % b === 0) problems.push({ text: `${a} ÷ ${b} = ?`, answer: a / b });
       }
     }
   }

@@ -256,6 +256,11 @@ input {
   margin-top: 12px;
 }
 
+/* display:flex would otherwise override the hidden attribute */
+.group-bar[hidden] {
+  display: none;
+}
+
 .group-bar {
   display: flex;
   align-items: center;
