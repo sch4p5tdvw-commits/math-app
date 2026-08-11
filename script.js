@@ -3,18 +3,22 @@
 // レベル2: 1桁+1桁（こたえが2桁）
 // レベル3: 1桁同士のひきざん（こたえは0いじょう）
 // レベル4: 2桁から1桁をひく ひきざん
+// レベル5: 1桁同士のかけざん
 const LEVELS = [
   { id: 1, label: "レベル1", hint: "1けた＋1けた（こたえも1けた）" },
   { id: 2, label: "レベル2", hint: "1けた＋1けた（こたえは2けた）" },
   { id: 3, label: "レベル3", hint: "1けたどうしの ひきざん" },
   { id: 4, label: "レベル4", hint: "2けた－1けた の ひきざん" },
+  { id: 5, label: "レベル5", hint: "1けたどうしの かけざん" },
 ];
 
 const HISTORY_KEY = "mathapp_history";
 const PLAYER_KEY = "mathapp_current_player";
+const PLAYER_LIST_KEY = "mathapp_player_list";
 const DATA_VERSION_KEY = "mathapp_data_version";
 const DATA_VERSION = "2";
 const MAX_ANSWER_DIGITS = 3;
+const WRONG_ANSWER_PENALTY_SEC = 3;
 
 // ===== 状態 =====
 let state = null;
@@ -130,11 +134,18 @@ function buildProblemBank(level) {
         problems.push({ text: `${a} － ${b} = ?`, answer: a - b });
       }
     }
-  } else {
+  } else if (level === 4) {
     // 2桁から1桁をひく
     for (let a = 10; a <= 99; a++) {
       for (let b = 1; b <= 9; b++) {
         problems.push({ text: `${a} － ${b} = ?`, answer: a - b });
+      }
+    }
+  } else {
+    // 1桁同士のかけざん
+    for (let a = 1; a <= 9; a++) {
+      for (let b = 1; b <= 9; b++) {
+        problems.push({ text: `${a} × ${b} = ?`, answer: a * b });
       }
     }
   }
@@ -201,6 +212,47 @@ function clearCurrentPlayer() {
 
 function renderPlayerBar() {
   document.getElementById("player-display").textContent = `👤 ${getCurrentPlayer()} さん`;
+}
+
+function loadPlayerList() {
+  try {
+    return JSON.parse(localStorage.getItem(PLAYER_LIST_KEY)) || [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberPlayer(name) {
+  const list = loadPlayerList().filter((n) => n !== name);
+  list.unshift(name);
+  localStorage.setItem(PLAYER_LIST_KEY, JSON.stringify(list.slice(0, 20)));
+}
+
+function renderPlayerList() {
+  const container = document.getElementById("player-list");
+  container.innerHTML = "";
+  const names = loadPlayerList();
+  if (names.length === 0) return;
+
+  const label = document.createElement("div");
+  label.className = "player-list-label";
+  label.textContent = "とうろくずみのなまえ";
+  container.appendChild(label);
+
+  names.forEach((name) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "player-list-item";
+    btn.textContent = `👤 ${name}`;
+    btn.dataset.name = name;
+    container.appendChild(btn);
+  });
+}
+
+function selectPlayer(name) {
+  rememberPlayer(name);
+  setCurrentPlayer(name);
+  enterStartScreen();
 }
 
 // ===== 画面切り替え =====
@@ -390,7 +442,9 @@ function finishQuiz() {
   if (state.timerHandle) clearInterval(state.timerHandle);
   const totalAnswered = state.correct + state.wrong;
   const accuracy = totalAnswered > 0 ? Math.round((state.correct / totalAnswered) * 100) : 0;
-  const elapsedSec = Math.round((Date.now() - state.startedAt) / 1000);
+  const rawElapsedSec = Math.round((Date.now() - state.startedAt) / 1000);
+  const penaltySec = state.mode === "normal" ? state.wrong * WRONG_ANSWER_PENALTY_SEC : 0;
+  const elapsedSec = rawElapsedSec + penaltySec;
 
   const entry = {
     id: Date.now(),
@@ -404,6 +458,7 @@ function finishQuiz() {
     accuracy,
     timeLimit: state.timeLimit,
     elapsedSec,
+    rawElapsedSec,
   };
   saveHistoryEntry(entry);
 
@@ -416,12 +471,21 @@ function renderResult(entry) {
     entry.mode === "timeattack" ? "タイムアタック けっか" : "けっか";
 
   const levelInfo = LEVELS.find((l) => l.id === entry.level);
+  let timeLine;
+  if (entry.mode === "timeattack") {
+    timeLine = `<div>せいげんじかん: ${entry.timeLimit}びょう</div>`;
+  } else if (entry.wrong > 0) {
+    timeLine = `<div>クリアタイム: ${entry.elapsedSec}びょう (じっさい${entry.rawElapsedSec}びょう + まちがい${entry.wrong}問 × ${WRONG_ANSWER_PENALTY_SEC}びょう)</div>`;
+  } else {
+    timeLine = `<div>クリアタイム: ${entry.elapsedSec}びょう</div>`;
+  }
+
   document.getElementById("result-stats").innerHTML = `
     <div class="big">${entry.correct} もん せいかい！</div>
     <div>せいかいりつ: ${entry.accuracy}%</div>
     <div>といたもんすう: ${entry.total}もん (まちがい ${entry.wrong}もん)</div>
     <div>レベル: ${entry.level} (${levelInfo ? levelInfo.hint : ""})</div>
-    ${entry.mode === "timeattack" ? `<div>せいげんじかん: ${entry.timeLimit}びょう</div>` : `<div>かかったじかん: ${entry.elapsedSec}びょう</div>`}
+    ${timeLine}
   `;
 }
 
@@ -439,6 +503,7 @@ function init() {
   if (getCurrentPlayer()) {
     enterStartScreen();
   } else {
+    renderPlayerList();
     showScreen("screen-player");
   }
 
@@ -447,13 +512,19 @@ function init() {
     const input = document.getElementById("player-name-input");
     const name = input.value.trim().slice(0, 10);
     if (!name) return;
-    setCurrentPlayer(name);
     input.value = "";
-    enterStartScreen();
+    selectPlayer(name);
+  });
+
+  document.getElementById("player-list").addEventListener("click", (e) => {
+    const btn = e.target.closest(".player-list-item");
+    if (!btn) return;
+    selectPlayer(btn.dataset.name);
   });
 
   document.getElementById("btn-switch-player").addEventListener("click", () => {
     clearCurrentPlayer();
+    renderPlayerList();
     showScreen("screen-player");
   });
 
