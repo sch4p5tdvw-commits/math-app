@@ -2,8 +2,17 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>さんすうチャレンジ</title>
+<meta name="description" content="スマホでタップして遊べる さんすうドリルアプリ">
+<meta name="theme-color" content="#ff8a3d">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="さんすう">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -16,14 +25,6 @@
     <div class="card">
       <h2>レベルをえらんでね</h2>
       <div class="level-grid" id="level-grid"></div>
-
-      <h2>けいさんの しゅるい</h2>
-      <div class="op-grid" id="op-grid">
-        <label class="op-chip"><input type="checkbox" value="add" checked> ＋ たしざん</label>
-        <label class="op-chip"><input type="checkbox" value="sub" checked> － ひきざん</label>
-        <label class="op-chip"><input type="checkbox" value="mul" checked> × かけざん</label>
-        <label class="op-chip"><input type="checkbox" value="div" checked> ÷ わりざん</label>
-      </div>
 
       <h2>モードをえらんでね</h2>
       <div class="mode-grid">
@@ -67,10 +68,22 @@
 
       <div id="quiz-question" class="quiz-question">1 + 1 = ?</div>
 
-      <form id="quiz-form" class="quiz-form" autocomplete="off">
-        <input type="number" id="quiz-answer" class="quiz-input" inputmode="numeric" placeholder="こたえ" required>
-        <button type="submit" class="btn btn-primary">こたえる</button>
-      </form>
+      <div id="answer-display" class="answer-display" aria-live="polite">&nbsp;</div>
+
+      <div class="keypad" id="keypad">
+        <button type="button" class="key" data-key="7">7</button>
+        <button type="button" class="key" data-key="8">8</button>
+        <button type="button" class="key" data-key="9">9</button>
+        <button type="button" class="key" data-key="4">4</button>
+        <button type="button" class="key" data-key="5">5</button>
+        <button type="button" class="key" data-key="6">6</button>
+        <button type="button" class="key" data-key="1">1</button>
+        <button type="button" class="key" data-key="2">2</button>
+        <button type="button" class="key" data-key="3">3</button>
+        <button type="button" class="key key-back" data-key="back">⌫</button>
+        <button type="button" class="key" data-key="0">0</button>
+        <button type="button" class="key key-enter" data-key="enter">こたえる</button>
+      </div>
       <div id="quiz-feedback" class="quiz-feedback"></div>
     </div>
   </section>
@@ -80,6 +93,14 @@
     <div class="card">
       <h2 id="result-title">けっか</h2>
       <div class="result-stats" id="result-stats"></div>
+
+      <form id="name-entry" class="name-entry" autocomplete="off">
+        <label for="player-name">なまえを にゅうりょくしてね</label>
+        <input type="text" id="player-name" class="name-input" maxlength="10" placeholder="なまえ（10もじまで）">
+        <button type="submit" class="btn btn-primary">きろくする</button>
+      </form>
+      <div id="name-saved-msg" class="name-saved-msg" hidden>きろくしました！ 🎉</div>
+
       <button id="btn-retry" class="btn btn-primary">もういちど</button>
       <button id="btn-back" class="btn btn-secondary">さいしょの がめんへ</button>
     </div>

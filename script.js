@@ -1,61 +1,56 @@
 // ===== レベル設定 =====
+// レベル1: 1桁+1桁（こたえも1桁）
+// レベル2: 1桁+1桁（こたえが2桁）
+// レベル3: 1桁同士のひきざん（こたえは0いじょう）
+// レベル4: 2桁から1桁をひく ひきざん
 const LEVELS = [
-  { id: 1, label: "レベル1", hint: "1年生くらい",
-    add: [1, 9], sub: [1, 9], mulA: [1, 5], mulB: [1, 5], divB: [1, 5], divQ: [1, 5] },
-  { id: 2, label: "レベル2", hint: "2年生くらい",
-    add: [1, 99], sub: [1, 99], mulA: [1, 9], mulB: [1, 9], divB: [1, 9], divQ: [1, 9] },
-  { id: 3, label: "レベル3", hint: "3年生くらい",
-    add: [1, 999], sub: [1, 999], mulA: [10, 99], mulB: [2, 9], divB: [2, 9], divQ: [10, 99] },
-  { id: 4, label: "レベル4", hint: "4年生くらい",
-    add: [1, 9999], sub: [1, 9999], mulA: [10, 99], mulB: [10, 99], divB: [2, 99], divQ: [2, 99] },
-  { id: 5, label: "レベル5", hint: "5年生くらい",
-    add: [1, 99999], sub: [1, 99999], mulA: [100, 999], mulB: [2, 99], divB: [2, 99], divQ: [100, 999] },
-  { id: 6, label: "レベル6", hint: "6年生くらい",
-    add: [1, 999999], sub: [1, 999999], mulA: [100, 999], mulB: [100, 999], divB: [10, 999], divQ: [10, 999] },
+  { id: 1, label: "レベル1", hint: "1けた＋1けた（こたえも1けた）" },
+  { id: 2, label: "レベル2", hint: "1けた＋1けた（こたえは2けた）" },
+  { id: 3, label: "レベル3", hint: "1けたどうしの ひきざん" },
+  { id: 4, label: "レベル4", hint: "2けた－1けた の ひきざん" },
 ];
 
-const OP_LABEL = { add: "＋", sub: "－", mul: "×", div: "÷" };
 const HISTORY_KEY = "mathapp_history";
+const MAX_ANSWER_DIGITS = 3;
 
 // ===== 状態 =====
 let state = null;
+let currentEntryId = null;
 
 // ===== ユーティリティ =====
 function randInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function pick(arr) {
-  return arr[randInt(0, arr.length - 1)];
-}
-
-function generateProblem(level, operators) {
-  const op = pick(operators);
-  const cfg = LEVELS.find((l) => l.id === level);
+function generateProblem(level) {
   let a, b, answer, text;
 
-  if (op === "add") {
-    a = randInt(...cfg.add);
-    b = randInt(...cfg.add);
+  if (level === 1) {
+    // 1桁 + 1桁、こたえも1桁 (合計が9以下)
+    a = randInt(1, 8);
+    b = randInt(1, 9 - a);
     answer = a + b;
     text = `${a} ＋ ${b}`;
-  } else if (op === "sub") {
-    a = randInt(...cfg.sub);
-    b = randInt(...cfg.sub);
+  } else if (level === 2) {
+    // 1桁 + 1桁、こたえは2桁 (合計が10以上)
+    a = randInt(1, 9);
+    const minB = Math.max(1, 10 - a);
+    b = randInt(minB, 9);
+    answer = a + b;
+    text = `${a} ＋ ${b}`;
+  } else if (level === 3) {
+    // 1桁同士のひきざん、こたえは0以上
+    a = randInt(0, 9);
+    b = randInt(0, 9);
     if (a < b) [a, b] = [b, a];
     answer = a - b;
     text = `${a} － ${b}`;
-  } else if (op === "mul") {
-    a = randInt(...cfg.mulA);
-    b = randInt(...cfg.mulB);
-    answer = a * b;
-    text = `${a} × ${b}`;
   } else {
-    const divisor = randInt(...cfg.divB);
-    const quotient = randInt(...cfg.divQ);
-    const dividend = divisor * quotient;
-    answer = quotient;
-    text = `${dividend} ÷ ${divisor}`;
+    // 2桁から1桁をひく
+    a = randInt(10, 99);
+    b = randInt(1, 9);
+    answer = a - b;
+    text = `${a} － ${b}`;
   }
 
   return { text: `${text} = ?`, answer };
@@ -69,10 +64,23 @@ function loadHistory() {
   }
 }
 
+function saveHistory(history) {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 30)));
+}
+
 function saveHistoryEntry(entry) {
   const history = loadHistory();
   history.unshift(entry);
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 30)));
+  saveHistory(history);
+}
+
+function updateHistoryEntryName(id, name) {
+  const history = loadHistory();
+  const entry = history.find((h) => h.id === id);
+  if (entry) {
+    entry.name = name;
+    saveHistory(history);
+  }
 }
 
 function formatDate(iso) {
@@ -109,10 +117,6 @@ function getSelectedLevel() {
   return btn ? Number(btn.dataset.level) : 1;
 }
 
-function getSelectedOperators() {
-  return Array.from(document.querySelectorAll("#op-grid input:checked")).map((i) => i.value);
-}
-
 function renderHistory() {
   const list = document.getElementById("history-list");
   const history = loadHistory();
@@ -123,8 +127,9 @@ function renderHistory() {
   list.innerHTML = history
     .map((h) => {
       const modeLabel = h.mode === "timeattack" ? `タイムアタック${h.timeLimit}秒` : `${h.total}もん`;
+      const nameLabel = h.name ? `${h.name} / ` : "";
       return `<div class="history-item">
-        <span>${formatDate(h.date)} / Lv${h.level} / ${modeLabel}</span>
+        <span>${nameLabel}${formatDate(h.date)} / Lv${h.level} / ${modeLabel}</span>
         <span>${h.correct}問正解 (${h.accuracy}%)</span>
       </div>`;
     })
@@ -134,16 +139,10 @@ function renderHistory() {
 // ===== クイズ開始 =====
 function startQuiz() {
   const level = getSelectedLevel();
-  const operators = getSelectedOperators();
-  if (operators.length === 0) {
-    alert("けいさんのしゅるいを1つ以上えらんでね");
-    return;
-  }
   const mode = document.querySelector('input[name="mode"]:checked').value;
 
   state = {
     level,
-    operators,
     mode,
     correct: 0,
     wrong: 0,
@@ -154,6 +153,7 @@ function startQuiz() {
     startedAt: Date.now(),
     timerHandle: null,
     currentAnswer: null,
+    inputBuffer: "",
   };
 
   showScreen("screen-quiz");
@@ -182,27 +182,43 @@ function updateQuizStatus() {
   }
 }
 
+function renderAnswerDisplay() {
+  const display = document.getElementById("answer-display");
+  display.textContent = state.inputBuffer.length > 0 ? state.inputBuffer : " ";
+}
+
 function nextQuestion() {
   if (state.mode === "normal" && state.index >= state.total) {
     finishQuiz();
     return;
   }
-  const problem = generateProblem(state.level, state.operators);
+  const problem = generateProblem(state.level);
   state.currentAnswer = problem.answer;
+  state.inputBuffer = "";
   document.getElementById("quiz-question").textContent = problem.text;
   document.getElementById("quiz-feedback").textContent = "";
   document.getElementById("quiz-feedback").className = "quiz-feedback";
-  const input = document.getElementById("quiz-answer");
-  input.value = "";
-  input.focus();
+  renderAnswerDisplay();
   updateQuizStatus();
 }
 
-function handleAnswerSubmit(e) {
-  e.preventDefault();
+function handleKeyPress(key) {
   if (!state) return;
-  const input = document.getElementById("quiz-answer");
-  const value = Number(input.value);
+  if (key === "back") {
+    state.inputBuffer = state.inputBuffer.slice(0, -1);
+    renderAnswerDisplay();
+  } else if (key === "enter") {
+    submitAnswer();
+  } else {
+    if (state.inputBuffer.length >= MAX_ANSWER_DIGITS) return;
+    state.inputBuffer += key;
+    renderAnswerDisplay();
+  }
+}
+
+function submitAnswer() {
+  if (!state || state.inputBuffer.length === 0) return;
+  const value = Number(state.inputBuffer);
   const feedback = document.getElementById("quiz-feedback");
 
   if (value === state.currentAnswer) {
@@ -234,10 +250,11 @@ function finishQuiz() {
   const elapsedSec = Math.round((Date.now() - state.startedAt) / 1000);
 
   const entry = {
+    id: Date.now(),
     date: new Date().toISOString(),
     level: state.level,
     mode: state.mode,
-    operators: state.operators,
+    name: "",
     total: totalAnswered,
     correct: state.correct,
     wrong: state.wrong,
@@ -246,21 +263,40 @@ function finishQuiz() {
     elapsedSec,
   };
   saveHistoryEntry(entry);
+  currentEntryId = entry.id;
 
   renderResult(entry);
+  resetNameEntry();
   showScreen("screen-result");
+}
+
+function resetNameEntry() {
+  document.getElementById("name-entry").hidden = false;
+  document.getElementById("name-saved-msg").hidden = true;
+  document.getElementById("player-name").value = "";
+}
+
+function handleNameSubmit(e) {
+  e.preventDefault();
+  if (currentEntryId === null) return;
+  const nameInput = document.getElementById("player-name");
+  const name = nameInput.value.trim().slice(0, 10);
+  if (!name) return;
+  updateHistoryEntryName(currentEntryId, name);
+  document.getElementById("name-entry").hidden = true;
+  document.getElementById("name-saved-msg").hidden = false;
 }
 
 function renderResult(entry) {
   document.getElementById("result-title").textContent =
     entry.mode === "timeattack" ? "タイムアタック けっか" : "けっか";
 
-  const opsLabel = entry.operators.map((o) => OP_LABEL[o]).join(" ");
+  const levelInfo = LEVELS.find((l) => l.id === entry.level);
   document.getElementById("result-stats").innerHTML = `
     <div class="big">${entry.correct} もん せいかい！</div>
     <div>せいかいりつ: ${entry.accuracy}%</div>
     <div>といたもんすう: ${entry.total}もん (まちがい ${entry.wrong}もん)</div>
-    <div>レベル: ${entry.level} / けいさん: ${opsLabel}</div>
+    <div>レベル: ${entry.level} (${levelInfo ? levelInfo.hint : ""})</div>
     ${entry.mode === "timeattack" ? `<div>せいげんじかん: ${entry.timeLimit}びょう</div>` : `<div>かかったじかん: ${entry.elapsedSec}びょう</div>`}
   `;
 }
@@ -271,12 +307,23 @@ function init() {
   renderHistory();
 
   document.getElementById("btn-start").addEventListener("click", startQuiz);
-  document.getElementById("quiz-form").addEventListener("submit", handleAnswerSubmit);
+  document.getElementById("keypad").addEventListener("click", (e) => {
+    const btn = e.target.closest(".key");
+    if (!btn) return;
+    handleKeyPress(btn.dataset.key);
+  });
+  document.getElementById("name-entry").addEventListener("submit", handleNameSubmit);
   document.getElementById("btn-retry").addEventListener("click", startQuiz);
   document.getElementById("btn-back").addEventListener("click", () => {
     renderHistory();
     showScreen("screen-start");
   });
+
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("sw.js").catch(() => {});
+    });
+  }
 }
 
 document.addEventListener("DOMContentLoaded", init);
