@@ -173,6 +173,29 @@ async function refreshCloudScores() {
   cloudPlayerCache = players;
 }
 
+// この端末にしかない名前と記録をクラウドへ送る。
+// クラウドどうきを使う前から端末にあったデータや、電波がないあいだに
+// できた記録は、これを通してはじめてほかの端末から見えるようになる。
+async function uploadLocalDataToCloud() {
+  if (!cloud || !getGroupCode()) return;
+
+  const knownNames = new Set(cloudPlayerCache);
+  const missingNames = loadPlayerList().filter((n) => n && !knownNames.has(n));
+
+  const knownIds = new Set(cloudScoreCache.map((s) => String(s.id)));
+  const missingScores = loadHistory().filter((h) => h && h.id != null && !knownIds.has(String(h.id)));
+
+  if (missingNames.length === 0 && missingScores.length === 0) return;
+
+  await Promise.all([
+    ...missingNames.map((n) => pushPlayerToCloud(n)),
+    ...missingScores.map((s) => pushScoreToCloud(s)),
+  ]);
+
+  cloudPlayerCache = [...cloudPlayerCache, ...missingNames];
+  cloudScoreCache = mergeScores(cloudScoreCache, missingScores);
+}
+
 // ===== 効果音 =====
 function getAudioContext() {
   if (!audioCtx) {
@@ -471,14 +494,15 @@ function renderRankingList(containerId, entries, compareFn, scoreLabelFn) {
     .join("");
 }
 
+// ランキングはレベルごとに出す。レベルがちがうと問題のむずかしさも
+// かかる時間もちがうので、まとめて比べても意味がないため。
 function renderRanking(levelFilter) {
   const filter = levelFilter || document.getElementById("ranking-level-filter").value;
   const player = getCurrentPlayer();
 
-  let entries = mergeScores(cloudScoreCache, loadHistory()).filter((h) => h.name === player);
-  if (filter !== "all") {
-    entries = entries.filter((h) => h.level === Number(filter));
-  }
+  const entries = mergeScores(cloudScoreCache, loadHistory()).filter(
+    (h) => h.name === player && h.level === Number(filter)
+  );
 
   renderRankingList(
     "ranking-normal-list",
@@ -680,7 +704,7 @@ function renderGroupBar() {
 function enterStartScreen() {
   renderPlayerBar();
   renderGroupBar();
-  renderRanking("all");
+  renderRanking();
   showScreen("screen-start");
 }
 
@@ -692,6 +716,7 @@ function enterPlayerScreen() {
 // あいことばが決まったら、クラウドから記録を読み直してから次の画面へ進む
 async function syncAndRoute() {
   await refreshCloudScores();
+  await uploadLocalDataToCloud();
   if (getCurrentPlayer()) {
     enterStartScreen();
   } else {
