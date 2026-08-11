@@ -256,6 +256,32 @@ input {
   margin-top: 12px;
 }
 
+.group-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 0 20px;
+  margin: -6px 0 16px;
+  font-size: 0.8rem;
+  color: #777;
+}
+
+.group-note {
+  font-size: 0.85rem;
+  color: #777;
+  line-height: 1.6;
+  margin: 0 0 14px;
+}
+
+.cloud-status {
+  font-size: 0.8rem;
+  color: #999;
+  text-align: center;
+  margin-top: 10px;
+}
+
 .player-list {
   margin-bottom: 16px;
 }
