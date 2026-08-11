@@ -70,63 +70,29 @@ function normalizeGroupCode(raw) {
   return raw.trim().toLowerCase().replace(/[^0-9a-z぀-ヿ一-鿿]/g, "").slice(0, 20);
 }
 
-// ===== クラウドどうき（Firestore REST API）=====
+// ===== クラウドどうき（Realtime Database REST API）=====
 // SDK を CDN から読み込まず REST を直接使う。読み込むファイルが増えないぶん
 // 起動が速く、CDN が使えない環境でもアプリが動く。
 // 通信に失敗した場合は端末内（localStorage）だけで動作させる。
 function initCloud() {
   const config = window.FIREBASE_CONFIG;
-  if (!config || !config.apiKey || !config.projectId) return false;
-  cloud = {
-    apiKey: config.apiKey,
-    baseUrl: `https://firestore.googleapis.com/v1/projects/${config.projectId}/databases/(default)/documents`,
-  };
+  if (!config || !config.databaseURL) return false;
+  cloud = { baseUrl: config.databaseURL.replace(/\/+$/, "") };
   return true;
 }
 
-function scoresUrl(extraParams) {
-  const params = new URLSearchParams({ key: cloud.apiKey, ...extraParams });
-  return `${cloud.baseUrl}/groups/${encodeURIComponent(getGroupCode())}/scores?${params}`;
-}
-
-// Firestore の型つき JSON と、ふつうのオブジェクトを相互に変換する
-function toFirestoreFields(obj) {
-  const fields = {};
-  Object.entries(obj).forEach(([key, value]) => {
-    if (value === null || value === undefined) {
-      fields[key] = { nullValue: null };
-    } else if (typeof value === "number") {
-      fields[key] = Number.isInteger(value)
-        ? { integerValue: String(value) }
-        : { doubleValue: value };
-    } else if (typeof value === "boolean") {
-      fields[key] = { booleanValue: value };
-    } else {
-      fields[key] = { stringValue: String(value) };
-    }
-  });
-  return fields;
-}
-
-function fromFirestoreFields(fields) {
-  const obj = {};
-  Object.entries(fields || {}).forEach(([key, wrapper]) => {
-    if ("integerValue" in wrapper) obj[key] = Number(wrapper.integerValue);
-    else if ("doubleValue" in wrapper) obj[key] = Number(wrapper.doubleValue);
-    else if ("booleanValue" in wrapper) obj[key] = wrapper.booleanValue;
-    else if ("nullValue" in wrapper) obj[key] = null;
-    else obj[key] = wrapper.stringValue;
-  });
-  return obj;
+function scoresUrl() {
+  return `${cloud.baseUrl}/groups/${encodeURIComponent(getGroupCode())}/scores.json`;
 }
 
 async function pushScoreToCloud(entry) {
   if (!cloud || !getGroupCode()) return;
   try {
+    // POST するとサーバー側でキーが自動採番され、端末どうしがぶつからない
     await fetch(scoresUrl(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fields: toFirestoreFields(entry) }),
+      body: JSON.stringify(entry),
     });
   } catch {
     // 送信に失敗しても端末内には残っているので、そのまま続行する
@@ -135,24 +101,17 @@ async function pushScoreToCloud(entry) {
 
 async function fetchScoresFromCloud() {
   if (!cloud || !getGroupCode()) return [];
-  const all = [];
-  let pageToken = "";
   try {
-    // ページ分割されている場合にそなえて、最大数ページまで読む
-    for (let page = 0; page < 5; page++) {
-      const params = { pageSize: "300" };
-      if (pageToken) params.pageToken = pageToken;
-      const res = await fetch(scoresUrl(params));
-      if (!res.ok) return all;
-      const data = await res.json();
-      (data.documents || []).forEach((doc) => all.push(fromFirestoreFields(doc.fields)));
-      if (!data.nextPageToken) break;
-      pageToken = data.nextPageToken;
-    }
+    const res = await fetch(scoresUrl());
+    if (!res.ok) return [];
+    const data = await res.json();
+    // Realtime Database は { 自動キー: 記録, ... } の形でかえってくる
+    if (!data || typeof data !== "object") return [];
+    return Object.values(data).filter((s) => s && typeof s === "object");
   } catch {
-    // オフラインなど。取れたぶんだけ返す
+    // オフラインなど
+    return [];
   }
-  return all;
 }
 
 // クラウドと端末内の記録を、id をキーに重複を除いて合わせる
