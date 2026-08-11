@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>さんすうチャレンジ</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app">
+  <h1 class="app-title">🧮 さんすうチャレンジ</h1>
+
+  <!-- スタート画面 -->
+  <section id="screen-start" class="screen">
+    <div class="card">
+      <h2>レベルをえらんでね</h2>
+      <div class="level-grid" id="level-grid"></div>
+
+      <h2>けいさんの しゅるい</h2>
+      <div class="op-grid" id="op-grid">
+        <label class="op-chip"><input type="checkbox" value="add" checked> ＋ たしざん</label>
+        <label class="op-chip"><input type="checkbox" value="sub" checked> － ひきざん</label>
+        <label class="op-chip"><input type="checkbox" value="mul" checked> × かけざん</label>
+        <label class="op-chip"><input type="checkbox" value="div" checked> ÷ わりざん</label>
+      </div>
+
+      <h2>モードをえらんでね</h2>
+      <div class="mode-grid">
+        <label class="mode-chip">
+          <input type="radio" name="mode" value="normal" checked>
+          <span>もんだいすうモード</span>
+          <select id="question-count">
+            <option value="10">10もん</option>
+            <option value="20">20もん</option>
+            <option value="30">30もん</option>
+          </select>
+        </label>
+        <label class="mode-chip">
+          <input type="radio" name="mode" value="timeattack">
+          <span>タイムアタック</span>
+          <select id="time-limit">
+            <option value="30">30びょう</option>
+            <option value="60" selected>60びょう</option>
+            <option value="120">120びょう</option>
+          </select>
+        </label>
+      </div>
+
+      <button id="btn-start" class="btn btn-primary">スタート！</button>
+    </div>
+
+    <div class="card">
+      <h2>きろく</h2>
+      <div id="history-list" class="history-list"></div>
+    </div>
+  </section>
+
+  <!-- 問題画面 -->
+  <section id="screen-quiz" class="screen" hidden>
+    <div class="card quiz-card">
+      <div class="quiz-status">
+        <span id="quiz-progress">もんだい 1/10</span>
+        <span id="quiz-timer"></span>
+      </div>
+      <div class="quiz-score">せいかい: <span id="quiz-correct">0</span> ／ まちがい: <span id="quiz-wrong">0</span></div>
+
+      <div id="quiz-question" class="quiz-question">1 + 1 = ?</div>
+
+      <form id="quiz-form" class="quiz-form" autocomplete="off">
+        <input type="number" id="quiz-answer" class="quiz-input" inputmode="numeric" placeholder="こたえ" required>
+        <button type="submit" class="btn btn-primary">こたえる</button>
+      </form>
+      <div id="quiz-feedback" class="quiz-feedback"></div>
+    </div>
+  </section>
+
+  <!-- 結果画面 -->
+  <section id="screen-result" class="screen" hidden>
+    <div class="card">
+      <h2 id="result-title">けっか</h2>
+      <div class="result-stats" id="result-stats"></div>
+      <button id="btn-retry" class="btn btn-primary">もういちど</button>
+      <button id="btn-back" class="btn btn-secondary">さいしょの がめんへ</button>
+    </div>
+  </section>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
