@@ -778,6 +778,13 @@ async function init() {
   });
 
   document.getElementById("btn-change-group").addEventListener("click", () => {
+    // 子どもが誤って押しても戻れるよう、消えるものを伝えてから確認する
+    const ok = window.confirm(
+      "ログアウトすると、あいことばと なまえを もういちど いれることになります。\n" +
+        "きろくは のこっているので、おなじ あいことばを いれれば また みられます。\n\n" +
+        "ログアウトしますか？"
+    );
+    if (!ok) return;
     clearGroupCode();
     clearCurrentPlayer();
     cloudScoreCache = [];
