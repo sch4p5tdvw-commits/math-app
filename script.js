@@ -473,50 +473,73 @@ function getSelectedLevel() {
   return btn ? Number(btn.dataset.level) : 1;
 }
 
-const RANK_MEDALS = ["🥇", "🥈", "🥉"];
+// この人の記録だけを、新しい順にそろえる
+function playerEntries() {
+  const player = getCurrentPlayer();
+  return mergeScores(cloudScoreCache, loadHistory())
+    .filter((h) => h && h.name === player)
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+}
 
-function renderRankingList(containerId, entries, compareFn, scoreLabelFn) {
-  const list = document.getElementById(containerId);
+// レベルごとの自己ベスト。もんだいすうモードはクリアタイムが短いほど、
+// タイムアタックは正解数が多いほど良い記録とする。
+function computeBestRecords(entries) {
+  const best = {};
+  LEVELS.forEach((lv) => (best[lv.id] = { normal: null, timeattack: null }));
+  entries.forEach((h) => {
+    const slot = best[h.level];
+    if (!slot) return;
+    if (h.mode === "timeattack") {
+      if (!slot.timeattack || h.correct > slot.timeattack.correct) slot.timeattack = h;
+    } else if (!slot.normal || h.elapsedSec < slot.normal.elapsedSec) {
+      slot.normal = h;
+    }
+  });
+  return best;
+}
+
+function renderBestRecords() {
+  const best = computeBestRecords(playerEntries());
+  const container = document.getElementById("best-records");
+  container.innerHTML = LEVELS.map((lv) => {
+    const slot = best[lv.id];
+    const normal = slot.normal
+      ? `${slot.normal.elapsedSec}びょう<small>${slot.normal.total}もん</small>`
+      : '<span class="best-none">-</span>';
+    const timeattack = slot.timeattack
+      ? `${slot.timeattack.correct}もん<small>${slot.timeattack.timeLimit}びょう</small>`
+      : '<span class="best-none">-</span>';
+    return `<div class="best-row">
+      <span class="best-lv">Lv${lv.id}</span>
+      <span class="best-val">${normal}</span>
+      <span class="best-val">${timeattack}</span>
+    </div>`;
+  }).join("");
+}
+
+function renderHistoryLog() {
+  const entries = playerEntries();
+  const log = document.getElementById("history-log");
+  document.getElementById("history-title").textContent = `${getCurrentPlayer()} さんのきろく`;
+
   if (entries.length === 0) {
-    list.innerHTML = '<div class="history-empty">まだきろくがないよ</div>';
+    log.innerHTML = '<div class="history-empty">まだきろくがないよ</div>';
     return;
   }
-  const sorted = entries.slice().sort(compareFn);
-  list.innerHTML = sorted
-    .map((h, i) => {
-      const rank = RANK_MEDALS[i] || `${i + 1}位`;
+
+  log.innerHTML = entries
+    .map((h) => {
+      const result =
+        h.mode === "timeattack"
+          ? `${h.correct}もん<small>${h.timeLimit}びょうで</small>`
+          : `${h.elapsedSec}びょう<small>${h.total}もん</small>`;
+      const mode = h.mode === "timeattack" ? "タイムアタック" : "もんだいすう";
       return `<div class="history-item">
-        <span class="rank-badge">${rank}</span>
-        <span class="history-main">${formatDate(h.date)} / Lv${h.level}</span>
-        <span>${scoreLabelFn(h)}</span>
+        <span class="history-main">${formatDate(h.date)}<small>Lv${h.level}・${mode}</small></span>
+        <span class="history-score">${result}<small>せいかいりつ ${h.accuracy}%</small></span>
       </div>`;
     })
     .join("");
-}
-
-// ランキングはレベルごとに出す。レベルがちがうと問題のむずかしさも
-// かかる時間もちがうので、まとめて比べても意味がないため。
-function renderRanking(levelFilter) {
-  const filter = levelFilter || document.getElementById("ranking-level-filter").value;
-  const player = getCurrentPlayer();
-
-  const entries = mergeScores(cloudScoreCache, loadHistory()).filter(
-    (h) => h.name === player && h.level === Number(filter)
-  );
-
-  renderRankingList(
-    "ranking-normal-list",
-    entries.filter((h) => h.mode === "normal"),
-    (a, b) => a.elapsedSec - b.elapsedSec || b.accuracy - a.accuracy || new Date(b.date) - new Date(a.date),
-    (h) => `${h.total}もん / ${h.elapsedSec}びょう (${h.accuracy}%)`
-  );
-
-  renderRankingList(
-    "ranking-timeattack-list",
-    entries.filter((h) => h.mode === "timeattack"),
-    (a, b) => b.correct - a.correct || b.accuracy - a.accuracy || new Date(b.date) - new Date(a.date),
-    (h) => `${h.correct}問正解 (${h.timeLimit}秒, ${h.accuracy}%)`
-  );
 }
 
 // ===== クイズ開始 =====
@@ -704,7 +727,7 @@ function renderGroupBar() {
 function enterStartScreen() {
   renderPlayerBar();
   renderGroupBar();
-  renderRanking();
+  renderBestRecords();
   showScreen("screen-start");
 }
 
@@ -782,9 +805,12 @@ async function init() {
     enterPlayerScreen();
   });
 
-  document.getElementById("ranking-level-filter").addEventListener("change", (e) => {
-    renderRanking(e.target.value);
+  document.getElementById("btn-history").addEventListener("click", () => {
+    renderHistoryLog();
+    showScreen("screen-history");
   });
+
+  document.getElementById("btn-history-back").addEventListener("click", enterStartScreen);
 
   document.getElementById("btn-start").addEventListener("click", startQuiz);
   document.getElementById("keypad").addEventListener("click", (e) => {

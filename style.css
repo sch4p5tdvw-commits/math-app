@@ -190,13 +190,6 @@ input {
   font-size: 0.9rem;
 }
 
-.history-item .rank-badge {
-  flex-shrink: 0;
-  min-width: 2em;
-  font-weight: bold;
-  color: var(--color-secondary-dark);
-}
-
 .history-item .history-main {
   flex: 1;
   min-width: 0;
@@ -227,35 +220,6 @@ input {
   padding: 4px 0;
 }
 
-.ranking-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.ranking-header h2 {
-  margin-bottom: 0;
-}
-
-.filter-select {
-  padding: 6px 8px;
-  border-radius: 8px;
-  border: 1px solid #ccc;
-  font-size: 0.9rem;
-}
-
-.ranking-subhead {
-  margin: 16px 0 8px;
-  font-size: 0.95rem;
-  color: var(--color-secondary-dark);
-}
-
-.ranking-subhead:first-of-type {
-  margin-top: 12px;
-}
-
 /* display:flex would otherwise override the hidden attribute */
 .group-bar[hidden] {
   display: none;
@@ -267,10 +231,16 @@ input {
   justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
-  padding: 0 20px;
-  margin: -6px 0 16px;
-  font-size: 0.8rem;
-  color: #777;
+  padding: 12px 20px;
+  margin-bottom: 14px;
+  font-size: 0.9rem;
+}
+
+.btn-compact {
+  width: auto;
+  margin-top: 0;
+  padding: 8px 14px;
+  font-size: 0.85rem;
 }
 
 .group-note {
@@ -476,4 +446,77 @@ input {
   .key {
     padding: 16px 0;
   }
+}
+
+/* さいこうきろく */
+.best-head,
+.best-row {
+  display: grid;
+  grid-template-columns: 3.2em 1fr 1fr;
+  gap: 8px;
+  align-items: center;
+}
+
+.best-head {
+  font-size: 0.75rem;
+  color: #999;
+  padding: 0 10px 6px;
+}
+
+.best-row {
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  background: #f7f7f7;
+  border-radius: 10px;
+  font-size: 0.95rem;
+}
+
+.best-lv {
+  font-weight: bold;
+  color: var(--color-secondary-dark);
+}
+
+.best-val {
+  font-weight: bold;
+}
+
+.best-val small {
+  display: block;
+  font-weight: normal;
+  font-size: 0.7rem;
+  color: #999;
+}
+
+.best-none {
+  color: #ccc;
+  font-weight: normal;
+}
+
+#btn-history {
+  margin-top: 14px;
+}
+
+/* これまでのきろく */
+.history-log {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 60vh;
+  overflow-y: auto;
+  margin-bottom: 14px;
+}
+
+.history-main small,
+.history-score small {
+  display: block;
+  font-size: 0.72rem;
+  color: #999;
+  font-weight: normal;
+}
+
+.history-score {
+  text-align: right;
+  font-weight: bold;
+  flex-shrink: 0;
+  white-space: nowrap;
 }

@@ -53,9 +53,9 @@
       <span id="player-display"></span>
       <button type="button" id="btn-switch-player" class="btn-link">ちがうひとであそぶ</button>
     </div>
-    <div class="group-bar">
+    <div class="card group-bar">
       <span id="group-display"></span>
-      <button type="button" id="btn-change-group" class="btn-link">あいことばをかえる</button>
+      <button type="button" id="btn-change-group" class="btn btn-secondary btn-compact">べつのあいことばにする</button>
     </div>
 
     <div class="card">
@@ -88,24 +88,23 @@
     </div>
 
     <div class="card">
-      <div class="ranking-header">
-        <h2>ランキング</h2>
-        <select id="ranking-level-filter" class="filter-select">
-          <option value="1">レベル1</option>
-          <option value="2">レベル2</option>
-          <option value="3">レベル3</option>
-          <option value="4">レベル4</option>
-          <option value="5">レベル5</option>
-          <option value="6">レベル6</option>
-          <option value="7">レベル7</option>
-          <option value="8">レベル8</option>
-        </select>
+      <h2>さいこうきろく</h2>
+      <div class="best-head">
+        <span class="best-head-lv"></span>
+        <span>もんだいすう</span>
+        <span>タイムアタック</span>
       </div>
-      <h3 class="ranking-subhead">もんだいすうモード（はやさじゅん）</h3>
-      <div id="ranking-normal-list" class="history-list"></div>
+      <div id="best-records" class="best-records"></div>
+      <button type="button" id="btn-history" class="btn btn-secondary">これまでのきろくをみる</button>
+    </div>
+  </section>
 
-      <h3 class="ranking-subhead">タイムアタック（せいかいすうじゅん）</h3>
-      <div id="ranking-timeattack-list" class="history-list"></div>
+  <!-- これまでのきろく画面 -->
+  <section id="screen-history" class="screen" hidden>
+    <div class="card">
+      <h2 id="history-title">これまでのきろく</h2>
+      <div id="history-log" class="history-log"></div>
+      <button type="button" id="btn-history-back" class="btn btn-secondary">もどる</button>
     </div>
   </section>
 
