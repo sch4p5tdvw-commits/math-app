@@ -227,30 +227,30 @@ function buildProblemBank(level) {
       }
     }
   } else if (level === 5) {
-    // 1桁同士のかけざん
-    for (let a = 1; a <= 9; a++) {
-      for (let b = 1; b <= 9; b++) {
+    // 1桁同士のかけざん（×1 はこたえがそのままなので使わない）
+    for (let a = 2; a <= 9; a++) {
+      for (let b = 2; b <= 9; b++) {
         problems.push({ text: `${a} × ${b} = ?`, answer: a * b });
       }
     }
   } else if (level === 6) {
-    // 2桁 × 1桁のかけざん
+    // 2桁 × 1桁のかけざん（×1 はのぞく）
     for (let a = 10; a <= 99; a++) {
-      for (let b = 1; b <= 9; b++) {
+      for (let b = 2; b <= 9; b++) {
         problems.push({ text: `${a} × ${b} = ?`, answer: a * b });
       }
     }
   } else if (level === 7) {
-    // 2桁以下 ÷ 1桁、わりきれるものだけ
+    // 2桁以下 ÷ 1桁、わりきれるものだけ（÷1 はのぞく）
     for (let a = 1; a <= 99; a++) {
-      for (let b = 1; b <= 9; b++) {
+      for (let b = 2; b <= 9; b++) {
         if (a % b === 0) problems.push({ text: `${a} ÷ ${b} = ?`, answer: a / b });
       }
     }
   } else {
-    // 3桁 ÷ 1桁、わりきれるものだけ
+    // 3桁 ÷ 1桁、わりきれるものだけ（÷1 はのぞく）
     for (let a = 100; a <= 999; a++) {
-      for (let b = 1; b <= 9; b++) {
+      for (let b = 2; b <= 9; b++) {
         if (a % b === 0) problems.push({ text: `${a} ÷ ${b} = ?`, answer: a / b });
       }
     }
