@@ -15,16 +15,20 @@ const LEVELS = [
 const HISTORY_KEY = "mathapp_history";
 const PLAYER_KEY = "mathapp_current_player";
 const PLAYER_LIST_KEY = "mathapp_player_list";
+const GROUP_KEY = "mathapp_group_code";
 const DATA_VERSION_KEY = "mathapp_data_version";
 const DATA_VERSION = "2";
 const MAX_ANSWER_DIGITS = 3;
 const WRONG_ANSWER_PENALTY_SEC = 3;
+const FIREBASE_SDK_VERSION = "10.12.2";
 
 // ===== 状態 =====
 let state = null;
 let audioCtx = null;
 let correctAudio = null;
 let wrongAudio = null;
+let cloud = null; // { db, api } — クラウドが使えないときは null のまま
+let cloudScoreCache = [];
 
 // ===== ユーティリティ =====
 function randInt(min, max) {
@@ -46,6 +50,83 @@ function maybeResetHistory() {
     localStorage.removeItem(HISTORY_KEY);
     localStorage.setItem(DATA_VERSION_KEY, DATA_VERSION);
   }
+}
+
+// ===== あいことば（グループ） =====
+function getGroupCode() {
+  return localStorage.getItem(GROUP_KEY) || null;
+}
+
+function setGroupCode(code) {
+  localStorage.setItem(GROUP_KEY, code);
+}
+
+function clearGroupCode() {
+  localStorage.removeItem(GROUP_KEY);
+}
+
+// あいことばはそのまま Firestore のドキュメントIDに使うため、
+// パスに使えない文字や大文字小文字のゆれをここで吸収する。
+function normalizeGroupCode(raw) {
+  return raw.trim().toLowerCase().replace(/[^0-9a-z぀-ヿ一-鿿]/g, "").slice(0, 20);
+}
+
+// ===== クラウドどうき（Firebase）=====
+// クラウドが使えない場合でもアプリが動くよう、読み込み失敗は握りつぶして
+// 端末内（localStorage）だけで動作させる。
+async function initCloud() {
+  const config = window.FIREBASE_CONFIG;
+  if (!config || !config.apiKey) return false;
+  try {
+    const base = `https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}`;
+    const [appMod, fsMod] = await Promise.all([
+      import(`${base}/firebase-app.js`),
+      import(`${base}/firebase-firestore.js`),
+    ]);
+    const app = appMod.initializeApp(config);
+    cloud = { db: fsMod.getFirestore(app), api: fsMod };
+    return true;
+  } catch {
+    cloud = null;
+    return false;
+  }
+}
+
+function scoresCollection() {
+  const { db, api } = cloud;
+  return api.collection(db, "groups", getGroupCode(), "scores");
+}
+
+async function pushScoreToCloud(entry) {
+  if (!cloud || !getGroupCode()) return;
+  try {
+    await cloud.api.addDoc(scoresCollection(), entry);
+  } catch {
+    // 送信に失敗しても端末内には残っているので、そのまま続行する
+  }
+}
+
+async function fetchScoresFromCloud() {
+  if (!cloud || !getGroupCode()) return [];
+  try {
+    const snap = await cloud.api.getDocs(scoresCollection());
+    return snap.docs.map((d) => d.data());
+  } catch {
+    return [];
+  }
+}
+
+// クラウドと端末内の記録を、id をキーに重複を除いて合わせる
+function mergeScores(cloudScores, localScores) {
+  const byId = new Map();
+  [...localScores, ...cloudScores].forEach((s) => {
+    if (s && s.id != null) byId.set(String(s.id), s);
+  });
+  return Array.from(byId.values());
+}
+
+async function refreshCloudScores() {
+  cloudScoreCache = await fetchScoresFromCloud();
 }
 
 // ===== 効果音 =====
@@ -228,10 +309,24 @@ function rememberPlayer(name) {
   localStorage.setItem(PLAYER_LIST_KEY, JSON.stringify(list.slice(0, 20)));
 }
 
+// 端末に登録済みの名前に、クラウド上の同じグループの名前も合わせて出す。
+// これで新しい端末でも、あいことばを入れれば家族の名前がそのまま選べる。
+function allKnownPlayerNames() {
+  const names = loadPlayerList();
+  const seen = new Set(names);
+  cloudScoreCache.forEach((s) => {
+    if (s.name && !seen.has(s.name)) {
+      seen.add(s.name);
+      names.push(s.name);
+    }
+  });
+  return names;
+}
+
 function renderPlayerList() {
   const container = document.getElementById("player-list");
   container.innerHTML = "";
-  const names = loadPlayerList();
+  const names = allKnownPlayerNames();
   if (names.length === 0) return;
 
   const label = document.createElement("div");
@@ -309,7 +404,7 @@ function renderRanking(levelFilter) {
   const filter = levelFilter || document.getElementById("ranking-level-filter").value;
   const player = getCurrentPlayer();
 
-  let entries = loadHistory().filter((h) => h.name === player);
+  let entries = mergeScores(cloudScoreCache, loadHistory()).filter((h) => h.name === player);
   if (filter !== "all") {
     entries = entries.filter((h) => h.level === Number(filter));
   }
@@ -347,6 +442,8 @@ function startQuiz() {
     timerHandle: null,
     currentAnswer: null,
     inputBuffer: "",
+    transitioning: false,
+    finished: false,
   };
 
   showScreen("screen-quiz");
@@ -388,6 +485,7 @@ function nextQuestion() {
   const problem = drawProblem(state.level);
   state.currentAnswer = problem.answer;
   state.inputBuffer = "";
+  state.transitioning = false;
   document.getElementById("quiz-question").textContent = problem.text;
   document.getElementById("quiz-feedback").textContent = "";
   document.getElementById("quiz-feedback").className = "quiz-feedback";
@@ -396,7 +494,8 @@ function nextQuestion() {
 }
 
 function handleKeyPress(key) {
-  if (!state) return;
+  // こたえあわせの表示中（つぎのもんだいへ移るまで）は入力を受け付けない
+  if (!state || state.transitioning || state.finished) return;
   if (key === "back") {
     state.inputBuffer = state.inputBuffer.slice(0, -1);
     renderAnswerDisplay();
@@ -410,7 +509,10 @@ function handleKeyPress(key) {
 }
 
 function submitAnswer() {
-  if (!state || state.inputBuffer.length === 0) return;
+  if (!state || state.transitioning || state.finished) return;
+  if (state.inputBuffer.length === 0) return;
+  // 連打で同じこたえが二重に数えられないよう、つぎのもんだいまでロックする
+  state.transitioning = true;
   const value = Number(state.inputBuffer);
   const feedback = document.getElementById("quiz-feedback");
 
@@ -439,6 +541,10 @@ function submitAnswer() {
 }
 
 function finishQuiz() {
+  // タイマーと、まだ残っている画面切りかえ待ちの両方から呼ばれうるので、
+  // 記録が二重に保存されないよう一度だけ実行する
+  if (!state || state.finished) return;
+  state.finished = true;
   if (state.timerHandle) clearInterval(state.timerHandle);
   const totalAnswered = state.correct + state.wrong;
   const accuracy = totalAnswered > 0 ? Math.round((state.correct / totalAnswered) * 100) : 0;
@@ -461,6 +567,8 @@ function finishQuiz() {
     rawElapsedSec,
   };
   saveHistoryEntry(entry);
+  cloudScoreCache = mergeScores(cloudScoreCache, [entry]);
+  pushScoreToCloud(entry);
 
   renderResult(entry);
   showScreen("screen-result");
@@ -490,22 +598,72 @@ function renderResult(entry) {
 }
 
 // ===== 初期化 =====
+function renderGroupBar() {
+  const bar = document.querySelector(".group-bar");
+  const code = getGroupCode();
+  // クラウドを使っていないときは、あいことばの欄自体を出さない
+  bar.hidden = !cloud || !code;
+  document.getElementById("group-display").textContent = code ? `あいことば: ${code}` : "";
+}
+
 function enterStartScreen() {
   renderPlayerBar();
+  renderGroupBar();
   renderRanking("all");
   showScreen("screen-start");
 }
 
-function init() {
-  maybeResetHistory();
-  renderLevelGrid();
+function enterPlayerScreen() {
+  renderPlayerList();
+  showScreen("screen-player");
+}
 
+// あいことばが決まったら、クラウドから記録を読み直してから次の画面へ進む
+async function syncAndRoute() {
+  await refreshCloudScores();
   if (getCurrentPlayer()) {
     enterStartScreen();
   } else {
-    renderPlayerList();
-    showScreen("screen-player");
+    enterPlayerScreen();
   }
+}
+
+async function init() {
+  maybeResetHistory();
+  renderLevelGrid();
+
+  // クラウドが使えるかどうかに関わらず、まず今ある情報で画面を出す
+  const cloudReady = await initCloud();
+
+  if (cloudReady && !getGroupCode()) {
+    showScreen("screen-group");
+  } else if (getCurrentPlayer()) {
+    enterStartScreen();
+  } else {
+    enterPlayerScreen();
+  }
+
+  // クラウドが使えるなら、記録を取り込んでから画面を更新し直す
+  if (cloudReady && getGroupCode()) {
+    syncAndRoute();
+  }
+
+  document.getElementById("group-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = document.getElementById("group-code-input");
+    const code = normalizeGroupCode(input.value);
+    if (!code) return;
+    setGroupCode(code);
+    input.value = "";
+    await syncAndRoute();
+  });
+
+  document.getElementById("btn-change-group").addEventListener("click", () => {
+    clearGroupCode();
+    clearCurrentPlayer();
+    cloudScoreCache = [];
+    showScreen("screen-group");
+  });
 
   document.getElementById("player-form").addEventListener("submit", (e) => {
     e.preventDefault();
@@ -524,8 +682,7 @@ function init() {
 
   document.getElementById("btn-switch-player").addEventListener("click", () => {
     clearCurrentPlayer();
-    renderPlayerList();
-    showScreen("screen-player");
+    enterPlayerScreen();
   });
 
   document.getElementById("ranking-level-filter").addEventListener("change", (e) => {

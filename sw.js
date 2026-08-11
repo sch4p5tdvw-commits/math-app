@@ -1,9 +1,10 @@
-const CACHE_NAME = "mathapp-cache-v4";
+const CACHE_NAME = "mathapp-cache-v5";
 const ASSETS = [
   "./",
   "./index.html",
   "./style.css",
   "./script.js",
+  "./firebase-config.js",
   "./manifest.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
@@ -29,6 +30,8 @@ self.addEventListener("activate", (event) => {
 // load instead of being masked by a stale cache; falls back to cache offline.
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  // Firebase など外部への通信には介入しない（キャッシュすると同期が壊れるため）
+  if (new URL(event.request.url).origin !== self.location.origin) return;
   event.respondWith(
     fetch(event.request)
       .then((response) => {

@@ -20,6 +20,21 @@
 <div class="app">
   <h1 class="app-title">🧮 さんすうチャレンジ</h1>
 
+  <!-- あいことば画面 -->
+  <section id="screen-group" class="screen" hidden>
+    <div class="card">
+      <h2>あいことばを いれてね</h2>
+      <p class="group-note">
+        おなじ あいことばを いれた スマホや タブレットで、きろくを いっしょに つかえます。
+        かぞくで きめた あいことばを いれてね。
+      </p>
+      <form id="group-form" class="name-entry" autocomplete="off">
+        <input type="text" id="group-code-input" class="name-input" maxlength="20" placeholder="あいことば" required>
+        <button type="submit" class="btn btn-primary">けってい</button>
+      </form>
+    </div>
+  </section>
+
   <!-- プレイヤーとうろく画面 -->
   <section id="screen-player" class="screen" hidden>
     <div class="card">
@@ -37,6 +52,10 @@
     <div class="card player-bar">
       <span id="player-display"></span>
       <button type="button" id="btn-switch-player" class="btn-link">ちがうひとであそぶ</button>
+    </div>
+    <div class="group-bar">
+      <span id="group-display"></span>
+      <button type="button" id="btn-change-group" class="btn-link">あいことばをかえる</button>
     </div>
 
     <div class="card">
@@ -131,6 +150,7 @@
   </section>
 </div>
 
+<script src="firebase-config.js"></script>
 <script src="script.js"></script>
 </body>
 </html>
