@@ -21,6 +21,7 @@ const LEVELS = [
 const HISTORY_KEY = "mathapp_history";
 const PLAYER_KEY = "mathapp_current_player";
 const PLAYER_LIST_KEY = "mathapp_player_list";
+const ALIAS_KEY = "mathapp_player_aliases";
 const GROUP_KEY = "mathapp_group_code";
 const DATA_VERSION_KEY = "mathapp_data_version";
 const DATA_VERSION = "2";
@@ -35,6 +36,7 @@ let wrongAudio = null;
 let cloud = null; // { db, api } — クラウドが使えないときは null のまま
 let cloudScoreCache = [];
 let cloudPlayerCache = [];
+let playerEditMode = false;
 
 // ===== ユーティリティ =====
 function randInt(min, max) {
@@ -98,19 +100,29 @@ function scoresUrl() {
 
 // なまえは記録とは別に保存する。記録から名前を逆算していると、
 // まだ1回も遊んでいない人の名前がほかの端末に伝わらないため。
+// あとで なまえを かえたり けしたり できるよう、
+// サーバーが つけた キーを かえす。
 async function pushPlayerToCloud(name) {
-  if (!cloud || !getGroupCode()) return;
+  if (!cloud || !getGroupCode()) return null;
   try {
-    await fetch(groupUrl("players"), {
+    const res = await fetch(groupUrl("players"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
     });
+    if (!res.ok) return null;
+    // Realtime Database は POST のこたえとして { name: "<キー>" } をかえす
+    const data = await res.json();
+    return data && typeof data.name === "string" ? data.name : null;
   } catch {
     // 送信できなくても端末内には残るので、そのまま続行する
+    return null;
   }
 }
 
+// クラウド上の名前を { key, name, aka } の形でかえす。
+// key は名前をかえたり消したりするときに必要。
+// aka は「まえのなまえ」で、名前をかえても前の記録を見失わないために使う。
 async function fetchPlayersFromCloud() {
   if (!cloud || !getGroupCode()) return [];
   try {
@@ -118,11 +130,35 @@ async function fetchPlayersFromCloud() {
     if (!res.ok) return [];
     const data = await res.json();
     if (!data || typeof data !== "object") return [];
-    return Object.values(data)
-      .map((p) => (p && typeof p === "object" ? p.name : null))
-      .filter((n) => typeof n === "string" && n.length > 0);
+    return Object.entries(data)
+      .filter(([, p]) => p && typeof p === "object" && typeof p.name === "string" && p.name)
+      .map(([key, p]) => ({ key, name: p.name, aka: Object.keys(p.aka || {}) }));
   } catch {
     return [];
+  }
+}
+
+async function writePlayerToCloud(key, value) {
+  if (!cloud || !getGroupCode()) return;
+  try {
+    await fetch(`${cloud.baseUrl}/groups/${encodeURIComponent(getGroupCode())}/players/${key}.json`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(value),
+    });
+  } catch {
+    // つうしんに失敗しても端末内の変更はのこる
+  }
+}
+
+async function deletePlayerFromCloud(key) {
+  if (!cloud || !getGroupCode()) return;
+  try {
+    await fetch(`${cloud.baseUrl}/groups/${encodeURIComponent(getGroupCode())}/players/${key}.json`, {
+      method: "DELETE",
+    });
+  } catch {
+    // 同上
   }
 }
 
@@ -179,7 +215,7 @@ async function refreshCloudScores() {
 async function uploadLocalDataToCloud() {
   if (!cloud || !getGroupCode()) return;
 
-  const knownNames = new Set(cloudPlayerCache);
+  const knownNames = new Set(cloudPlayerCache.map((p) => p.name));
   const missingNames = loadPlayerList().filter((n) => n && !knownNames.has(n));
 
   const knownIds = new Set(cloudScoreCache.map((s) => String(s.id)));
@@ -187,12 +223,12 @@ async function uploadLocalDataToCloud() {
 
   if (missingNames.length === 0 && missingScores.length === 0) return;
 
-  await Promise.all([
-    ...missingNames.map((n) => pushPlayerToCloud(n)),
-    ...missingScores.map((s) => pushScoreToCloud(s)),
+  const [addedNames] = await Promise.all([
+    Promise.all(missingNames.map(async (name) => ({ key: await pushPlayerToCloud(name), name, aka: [] }))),
+    Promise.all(missingScores.map((s) => pushScoreToCloud(s))),
   ]);
 
-  cloudPlayerCache = [...cloudPlayerCache, ...missingNames];
+  cloudPlayerCache = [...cloudPlayerCache, ...addedNames];
   cloudScoreCache = mergeScores(cloudScoreCache, missingScores);
 }
 
@@ -403,7 +439,7 @@ function allKnownPlayerNames() {
   const names = loadPlayerList();
   const seen = new Set(names);
   // クラウドに登録された名前と、記録にふくまれる名前の両方から拾う
-  const fromCloud = [...cloudPlayerCache, ...cloudScoreCache.map((s) => s && s.name)];
+  const fromCloud = cloudPlayerCache.map((p) => p.name);
   fromCloud.forEach((name) => {
     if (name && !seen.has(name)) {
       seen.add(name);
@@ -413,33 +449,179 @@ function allKnownPlayerNames() {
   return names;
 }
 
+// なまえをかえたとき、まえのなまえも おぼえておく。
+// 記録は なまえで ひもづいているので、これがないと かえたとたんに
+// それまでの記録が見えなくなってしまう。
+function loadAliases() {
+  try {
+    return JSON.parse(localStorage.getItem(ALIAS_KEY)) || {};
+  } catch {
+    return {};
+  }
+}
+
+function saveAliases(map) {
+  localStorage.setItem(ALIAS_KEY, JSON.stringify(map));
+}
+
+// その人が今まで使ったすべてのなまえ（今のなまえ＋まえのなまえ）
+function namesOf(player) {
+  const local = loadAliases()[player] || [];
+  const cloudEntry = cloudPlayerCache.find((p) => p.name === player);
+  return [player, ...local, ...(cloudEntry ? cloudEntry.aka : [])].filter(
+    (n, i, arr) => n && arr.indexOf(n) === i
+  );
+}
+
+function countRecordsOf(player) {
+  const names = new Set(namesOf(player));
+  return mergeScores(cloudScoreCache, loadHistory()).filter((h) => h && names.has(h.name)).length;
+}
+
+function renamePlayer(oldName, newName) {
+  // 端末内: 一覧・まえのなまえ・いま選んでいる人 をまとめて付けかえる
+  const list = loadPlayerList().map((n) => (n === oldName ? newName : n));
+  localStorage.setItem(PLAYER_LIST_KEY, JSON.stringify(list));
+
+  const aliases = loadAliases();
+  const previous = aliases[oldName] || [];
+  delete aliases[oldName];
+  aliases[newName] = [...new Set([...previous, oldName])];
+  saveAliases(aliases);
+
+  if (getCurrentPlayer() === oldName) setCurrentPlayer(newName);
+
+  // クラウド: 同じ場所を書きかえ、まえのなまえを aka にのこす
+  const entry = cloudPlayerCache.find((p) => p.name === oldName);
+  const aka = [...new Set([...(entry ? entry.aka : []), ...previous, oldName])];
+  cloudPlayerCache = cloudPlayerCache.map((p) =>
+    p.name === oldName ? { ...p, name: newName, aka } : p
+  );
+  if (entry && entry.key) {
+    const akaMap = {};
+    aka.forEach((n) => (akaMap[n] = true));
+    writePlayerToCloud(entry.key, { name: newName, aka: akaMap });
+  } else {
+    const created = cloudPlayerCache.find((p) => p.name === newName);
+    pushPlayerToCloud(newName).then((key) => {
+      if (key && created) created.key = key;
+    });
+  }
+}
+
+function deletePlayer(name) {
+  localStorage.setItem(
+    PLAYER_LIST_KEY,
+    JSON.stringify(loadPlayerList().filter((n) => n !== name))
+  );
+  const aliases = loadAliases();
+  delete aliases[name];
+  saveAliases(aliases);
+
+  const entry = cloudPlayerCache.find((p) => p.name === name);
+  cloudPlayerCache = cloudPlayerCache.filter((p) => p.name !== name);
+  if (entry && entry.key) deletePlayerFromCloud(entry.key);
+
+  if (getCurrentPlayer() === name) clearCurrentPlayer();
+}
+
+function handleRenamePlayer(oldName) {
+  const input = window.prompt(`「${oldName}」の あたらしい なまえを いれてね`, oldName);
+  if (input === null) return;
+  const newName = input.trim().slice(0, 10);
+  if (!newName || newName === oldName) return;
+  if (allKnownPlayerNames().some((n) => n === newName)) {
+    window.alert(`「${newName}」は すでに つかわれています。`);
+    return;
+  }
+  renamePlayer(oldName, newName);
+  renderPlayerList();
+}
+
+function handleDeletePlayer(name) {
+  // きろくの数を見せたうえで確認する。まちがって消しても、
+  // きろく自体はのこっていて 同じなまえを つくれば また見られる。
+  const count = countRecordsOf(name);
+  const ok = window.confirm(
+    `「${name}」を いちらんから けしますか？\n\n` +
+      `${count}かいぶんの きろくが あります。\n` +
+      `きろくは のこるので、おなじ なまえを つくれば また みられます。`
+  );
+  if (!ok) return;
+  deletePlayer(name);
+  renderPlayerList();
+}
+
 function renderPlayerList() {
   const container = document.getElementById("player-list");
   container.innerHTML = "";
   const names = allKnownPlayerNames();
-  if (names.length === 0) return;
+  if (names.length === 0) {
+    playerEditMode = false;
+    return;
+  }
 
-  const label = document.createElement("div");
+  const head = document.createElement("div");
+  head.className = "player-list-head";
+  const label = document.createElement("span");
   label.className = "player-list-label";
-  label.textContent = "とうろくずみのなまえ";
-  container.appendChild(label);
+  label.textContent = playerEditMode ? "なまえを かえる / けす" : "とうろくずみのなまえ";
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "btn-link";
+  toggle.textContent = playerEditMode ? "おわり" : "へんしゅう";
+  toggle.addEventListener("click", () => {
+    playerEditMode = !playerEditMode;
+    renderPlayerList();
+  });
+  head.append(label, toggle);
+  container.appendChild(head);
 
   names.forEach((name) => {
+    const row = document.createElement("div");
+    row.className = "player-row";
+
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "player-list-item";
-    btn.textContent = `👤 ${name}`;
+    btn.textContent = `\u{1F464} ${name}`;
     btn.dataset.name = name;
-    container.appendChild(btn);
+    // へんしゅう中は えらべないようにして、あやまって始めてしまうのを防ぐ
+    btn.disabled = playerEditMode;
+    row.appendChild(btn);
+
+    if (playerEditMode) {
+      const rename = document.createElement("button");
+      rename.type = "button";
+      rename.className = "player-edit-btn";
+      rename.textContent = "\u270F\uFE0F";
+      rename.title = "なまえをかえる";
+      rename.addEventListener("click", () => handleRenamePlayer(name));
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "player-edit-btn player-delete-btn";
+      remove.textContent = "\u{1F5D1}\uFE0F";
+      remove.title = "けす";
+      remove.addEventListener("click", () => handleDeletePlayer(name));
+
+      row.append(rename, remove);
+    }
+
+    container.appendChild(row);
   });
 }
 
 function selectPlayer(name) {
   rememberPlayer(name);
   setCurrentPlayer(name);
-  if (!cloudPlayerCache.includes(name)) {
-    cloudPlayerCache = [...cloudPlayerCache, name];
-    pushPlayerToCloud(name);
+  if (!cloudPlayerCache.some((p) => p.name === name)) {
+    const pending = { key: null, name, aka: [] };
+    cloudPlayerCache = [...cloudPlayerCache, pending];
+    // キーが返ってきたら控えておく（あとで名前変更・削除するのに要る）
+    pushPlayerToCloud(name).then((key) => {
+      if (key) pending.key = key;
+    });
   }
   enterStartScreen();
 }
@@ -475,9 +657,10 @@ function getSelectedLevel() {
 
 // この人の記録だけを、新しい順にそろえる
 function playerEntries() {
-  const player = getCurrentPlayer();
+  // まえのなまえの記録もふくめる（なまえをかえても記録が消えないように）
+  const names = new Set(namesOf(getCurrentPlayer()));
   return mergeScores(cloudScoreCache, loadHistory())
-    .filter((h) => h && h.name === player)
+    .filter((h) => h && names.has(h.name))
     .sort((a, b) => new Date(b.date) - new Date(a.date));
 }
 
@@ -732,6 +915,7 @@ function enterStartScreen() {
 }
 
 function enterPlayerScreen() {
+  playerEditMode = false;
   renderPlayerList();
   showScreen("screen-player");
 }
@@ -803,7 +987,7 @@ async function init() {
 
   document.getElementById("player-list").addEventListener("click", (e) => {
     const btn = e.target.closest(".player-list-item");
-    if (!btn) return;
+    if (!btn || playerEditMode) return;
     selectPlayer(btn.dataset.name);
   });
 
