@@ -520,3 +520,48 @@ input {
   flex-shrink: 0;
   white-space: nowrap;
 }
+
+/* なまえの へんしゅう */
+.player-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.player-list-head .player-list-label {
+  margin-bottom: 0;
+}
+
+.player-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.player-row .player-list-item {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.player-row .player-list-item:disabled {
+  opacity: 0.75;
+  cursor: default;
+}
+
+.player-edit-btn {
+  flex-shrink: 0;
+  width: 48px;
+  border: 2px solid #ddd;
+  border-radius: var(--radius);
+  background: #fff;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.player-delete-btn {
+  border-color: #f3c4c2;
+  background: #fff5f5;
+}
