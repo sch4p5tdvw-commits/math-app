@@ -37,6 +37,7 @@ let cloud = null; // { db, api } — クラウドが使えないときは null �
 let cloudScoreCache = [];
 let cloudPlayerCache = [];
 let playerEditMode = false;
+let historyEditMode = false;
 
 // ===== ユーティリティ =====
 function randInt(min, max) {
@@ -151,6 +152,17 @@ async function writePlayerToCloud(key, value) {
   }
 }
 
+async function deleteScoreFromCloud(key) {
+  if (!cloud || !getGroupCode()) return;
+  try {
+    await fetch(`${cloud.baseUrl}/groups/${encodeURIComponent(getGroupCode())}/scores/${key}.json`, {
+      method: "DELETE",
+    });
+  } catch {
+    // つうしんに失敗しても端末内の変更はのこる
+  }
+}
+
 async function deletePlayerFromCloud(key) {
   if (!cloud || !getGroupCode()) return;
   try {
@@ -162,17 +174,23 @@ async function deletePlayerFromCloud(key) {
   }
 }
 
+// あとで1件ずつ消せるよう、サーバーが つけた キーを かえす。
 async function pushScoreToCloud(entry) {
-  if (!cloud || !getGroupCode()) return;
+  if (!cloud || !getGroupCode()) return null;
   try {
+    const { _key, ...payload } = entry;
     // POST するとサーバー側でキーが自動採番され、端末どうしがぶつからない
-    await fetch(scoresUrl(), {
+    const res = await fetch(scoresUrl(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(entry),
+      body: JSON.stringify(payload),
     });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data && typeof data.name === "string" ? data.name : null;
   } catch {
     // 送信に失敗しても端末内には残っているので、そのまま続行する
+    return null;
   }
 }
 
@@ -182,9 +200,12 @@ async function fetchScoresFromCloud() {
     const res = await fetch(scoresUrl());
     if (!res.ok) return [];
     const data = await res.json();
-    // Realtime Database は { 自動キー: 記録, ... } の形でかえってくる
+    // Realtime Database は { 自動キー: 記録, ... } の形でかえってくる。
+    // あとで1件ずつ消せるよう、キーを _key としてもたせておく。
     if (!data || typeof data !== "object") return [];
-    return Object.values(data).filter((s) => s && typeof s === "object");
+    return Object.entries(data)
+      .filter(([, v]) => v && typeof v === "object")
+      .map(([key, v]) => ({ ...v, _key: key }));
   } catch {
     // オフラインなど
     return [];
@@ -223,13 +244,14 @@ async function uploadLocalDataToCloud() {
 
   if (missingNames.length === 0 && missingScores.length === 0) return;
 
-  const [addedNames] = await Promise.all([
+  const [addedNames, addedScores] = await Promise.all([
     Promise.all(missingNames.map(async (name) => ({ key: await pushPlayerToCloud(name), name, aka: [] }))),
-    Promise.all(missingScores.map((s) => pushScoreToCloud(s))),
+    // キーを控えておかないと、あとでこの記録を消せなくなる
+    Promise.all(missingScores.map(async (s) => ({ ...s, _key: await pushScoreToCloud(s) }))),
   ]);
 
   cloudPlayerCache = [...cloudPlayerCache, ...addedNames];
-  cloudScoreCache = mergeScores(cloudScoreCache, missingScores);
+  cloudScoreCache = mergeScores(cloudScoreCache, addedScores);
 }
 
 // ===== 効果音 =====
@@ -701,29 +723,93 @@ function renderBestRecords() {
   }).join("");
 }
 
+function deleteRecord(entry) {
+  // 端末内から消す
+  const kept = loadHistory().filter((h) => String(h.id) !== String(entry.id));
+  saveHistory(kept);
+  // クラウドからも消す（キーがあるとき＝クラウドに上がっている記録）
+  cloudScoreCache = cloudScoreCache.filter((h) => String(h.id) !== String(entry.id));
+  if (entry._key) deleteScoreFromCloud(entry._key);
+}
+
+function handleDeleteRecord(entry) {
+  const when = formatDate(entry.date);
+  const what =
+    entry.mode === "timeattack"
+      ? `${entry.correct}もん（${entry.timeLimit}びょう）`
+      : `${entry.elapsedSec}びょう（${entry.total}もん）`;
+  const ok = window.confirm(
+    `この きろくを けしますか？\n\n${when}\nレベル${entry.level}・${what}\n\n` +
+      `けすと もとに もどせません。`
+  );
+  if (!ok) return;
+  deleteRecord(entry);
+  renderHistoryLog();
+}
+
 function renderHistoryLog() {
   const entries = playerEntries();
   const log = document.getElementById("history-log");
+  const head = document.getElementById("history-head");
   document.getElementById("history-title").textContent = `${getCurrentPlayer()} さんのきろく`;
 
+  head.innerHTML = "";
+  log.innerHTML = "";
+
   if (entries.length === 0) {
+    historyEditMode = false;
     log.innerHTML = '<div class="history-empty">まだきろくがないよ</div>';
     return;
   }
 
-  log.innerHTML = entries
-    .map((h) => {
-      const result =
-        h.mode === "timeattack"
-          ? `${h.correct}もん<small>${h.timeLimit}びょうで</small>`
-          : `${h.elapsedSec}びょう<small>${h.total}もん</small>`;
-      const mode = h.mode === "timeattack" ? "タイムアタック" : "もんだいすう";
-      return `<div class="history-item">
-        <span class="history-main">${formatDate(h.date)}<small>Lv${h.level}・${mode}</small></span>
-        <span class="history-score">${result}<small>せいかいりつ ${h.accuracy}%</small></span>
-      </div>`;
-    })
-    .join("");
+  const label = document.createElement("span");
+  label.className = "player-list-label";
+  label.textContent = historyEditMode ? "けしたい きろくを えらんでね" : `ぜんぶで ${entries.length}かい`;
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "btn-link";
+  toggle.textContent = historyEditMode ? "おわり" : "へんしゅう";
+  toggle.addEventListener("click", () => {
+    historyEditMode = !historyEditMode;
+    renderHistoryLog();
+  });
+  head.append(label, toggle);
+
+  entries.forEach((h) => {
+    const row = document.createElement("div");
+    row.className = "history-item";
+
+    const main = document.createElement("span");
+    main.className = "history-main";
+    const mode = h.mode === "timeattack" ? "タイムアタック" : "もんだいすう";
+    main.innerHTML = `${formatDate(h.date)}<small>Lv${h.level}・${mode}</small>`;
+
+    const score = document.createElement("span");
+    score.className = "history-score";
+    score.innerHTML =
+      h.mode === "timeattack"
+        ? `${h.correct}もん<small>${h.timeLimit}びょうで</small>`
+        : `${h.elapsedSec}びょう<small>${h.total}もん</small>`;
+
+    row.append(main, score);
+
+    if (historyEditMode) {
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "player-edit-btn player-delete-btn";
+      del.textContent = "\u{1F5D1}\uFE0F";
+      del.title = "この きろくを けす";
+      del.addEventListener("click", () => handleDeleteRecord(h));
+      row.appendChild(del);
+    } else {
+      const rate = document.createElement("span");
+      rate.className = "history-rate";
+      rate.textContent = `${h.accuracy}%`;
+      row.appendChild(rate);
+    }
+
+    log.appendChild(row);
+  });
 }
 
 // ===== クイズ開始 =====
@@ -869,8 +955,11 @@ function finishQuiz() {
     rawElapsedSec,
   };
   saveHistoryEntry(entry);
-  cloudScoreCache = mergeScores(cloudScoreCache, [entry]);
-  pushScoreToCloud(entry);
+  const cached = { ...entry };
+  cloudScoreCache = mergeScores(cloudScoreCache, [cached]);
+  pushScoreToCloud(entry).then((key) => {
+    if (key) cached._key = key;
+  });
 
   renderResult(entry);
   showScreen("screen-result");
@@ -998,6 +1087,7 @@ async function init() {
   });
 
   document.getElementById("btn-history").addEventListener("click", () => {
+    historyEditMode = false;
     renderHistoryLog();
     showScreen("screen-history");
   });
