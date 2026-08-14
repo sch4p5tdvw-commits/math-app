@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>さんすうチャレンジ</title>
+<title>さんすうトレーニング</title>
 <meta name="description" content="スマホでタップして遊べる さんすうドリルアプリ">
 <meta name="theme-color" content="#ff8a3d">
 <meta name="mobile-web-app-capable" content="yes">
@@ -18,7 +18,7 @@
 <body>
 
 <div class="app">
-  <h1 class="app-title">🧮 さんすうチャレンジ</h1>
+  <h1 class="app-title">さんすうトレーニング</h1>
 
   <!-- あいことば画面 -->
   <section id="screen-group" class="screen" hidden>
@@ -67,20 +67,12 @@
         <label class="mode-chip">
           <input type="radio" name="mode" value="normal" checked>
           <span>もんだいすうモード</span>
-          <select id="question-count">
-            <option value="30" selected>30もん</option>
-            <option value="50">50もん</option>
-            <option value="100">100もん</option>
-          </select>
+          <span class="mode-setting">30もん</span>
         </label>
         <label class="mode-chip">
           <input type="radio" name="mode" value="timeattack">
           <span>タイムアタック</span>
-          <select id="time-limit">
-            <option value="30">30びょう</option>
-            <option value="60" selected>60びょう</option>
-            <option value="120">120びょう</option>
-          </select>
+          <span class="mode-setting">1ぷん</span>
         </label>
       </div>
 

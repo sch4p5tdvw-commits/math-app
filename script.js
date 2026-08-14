@@ -28,12 +28,18 @@ const OPS = [
   { id: "div", sign: "÷", name: "わりざん", color: "#2f8f6a", levels: [7, 8] },
 ];
 
+// どちらのモードも設定はひとつだけ。記録どうしを比べられるようにするため、
+// 問題数と制限時間は選ばせずに固定する。
+const QUESTION_COUNT = 30;
+const TIME_LIMIT_SEC = 60;
+
 // モードごとの「よい記録」のきめかた。
 // もんだいすうモードは タイムが みじかいほど、タイムアタックは 正解数が おおいほど よい。
 const MODE_META = {
   normal: {
     id: "normal",
     name: "もんだいすう",
+    setting: `${QUESTION_COUNT}もん`,
     unit: "びょう",
     better: "low",
     title: "クリアタイム",
@@ -42,6 +48,7 @@ const MODE_META = {
   timeattack: {
     id: "timeattack",
     name: "タイムアタック",
+    setting: "1ぷん",
     unit: "もん",
     better: "high",
     title: "せいかいすう",
@@ -1073,9 +1080,9 @@ function startQuiz() {
     correct: 0,
     wrong: 0,
     index: 0,
-    total: mode === "normal" ? Number(document.getElementById("question-count").value) : Infinity,
-    timeLimit: mode === "timeattack" ? Number(document.getElementById("time-limit").value) : null,
-    timeLeft: mode === "timeattack" ? Number(document.getElementById("time-limit").value) : null,
+    total: mode === "normal" ? QUESTION_COUNT : Infinity,
+    timeLimit: mode === "timeattack" ? TIME_LIMIT_SEC : null,
+    timeLeft: mode === "timeattack" ? TIME_LIMIT_SEC : null,
     startedAt: null, // カウントダウンが おわった ときに いれる
     timerHandle: null,
     currentAnswer: null,
@@ -1091,10 +1098,7 @@ function startQuiz() {
   state.transitioning = true;
 
   const started = state;
-  const countdownLabel =
-    mode === "timeattack"
-      ? `${levelLabel(level)}・${state.timeLimit}びょう`
-      : `${levelLabel(level)}・${state.total}もん`;
+  const countdownLabel = `${levelLabel(level)}・${MODE_META[mode].setting}`;
   runCountdown(countdownLabel, () => {
     // カウントダウン中に べつのゲームが はじまっていたら なにもしない
     if (state !== started || state.finished) return;
@@ -1268,7 +1272,7 @@ function renderResult(entry, achievement) {
   const levelInfo = LEVELS.find((l) => l.id === entry.level);
   let timeLine;
   if (entry.mode === "timeattack") {
-    timeLine = `<div>せいげんじかん: ${entry.timeLimit}びょう</div>`;
+    timeLine = `<div>せいげんじかん: ${MODE_META.timeattack.setting}</div>`;
   } else if (entry.wrong > 0) {
     timeLine = `<div>クリアタイム: ${entry.elapsedSec}びょう (じっさい${entry.rawElapsedSec}びょう + まちがい${entry.wrong}問 × ${WRONG_ANSWER_PENALTY_SEC}びょう)</div>`;
   } else {

@@ -179,12 +179,15 @@ input {
   font-weight: bold;
 }
 
-.mode-chip select {
+.mode-chip .mode-setting {
   margin-left: auto;
-  padding: 6px 8px;
-  border-radius: 8px;
-  border: 1px solid #ccc;
-  font-size: 0.9rem;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: #f2efe9;
+  color: #7b7268;
+  font-size: 0.85rem;
+  font-weight: bold;
+  white-space: nowrap;
 }
 
 .btn {
