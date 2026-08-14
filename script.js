@@ -2,7 +2,7 @@
 // レベル1: 1桁+1桁（こたえも1桁）
 // レベル2: 1桁+1桁（こたえが2桁）
 // レベル3: 1桁同士のひきざん（こたえは0いじょう）
-// レベル4: 繰り下がりのある引き算（2桁－1桁、一の位が足りないもの）
+// レベル4: 繰り下がりのある引き算（10〜19 － 1〜10、一の位が足りないもの）
 // レベル5: 1桁同士のかけざん
 // レベル6: 2桁×1桁のかけざん
 // レベル7: 2桁以下÷1桁のわりざん（わりきれるもの）
@@ -11,7 +11,7 @@ const LEVELS = [
   { id: 1, hint: "1けた＋1けた（こたえも1けた）" },
   { id: 2, hint: "1けた＋1けた（こたえは2けた）" },
   { id: 3, hint: "1けたどうしの ひきざん" },
-  { id: 4, hint: "くりさがりの ある ひきざん" },
+  { id: 4, hint: "10〜19からひく くりさがりの ある ひきざん" },
   { id: 5, hint: "1けたどうしの かけざん" },
   { id: 6, hint: "2けた×1けた の かけざん" },
   { id: 7, hint: "2けたいか÷1けた の わりざん" },
@@ -28,12 +28,18 @@ const OPS = [
   { id: "div", sign: "÷", name: "わりざん", color: "#2f8f6a", levels: [7, 8] },
 ];
 
+// どちらのモードも設定はひとつだけ。記録どうしを比べられるようにするため、
+// 問題数と制限時間は選ばせずに固定する。
+const QUESTION_COUNT = 30;
+const TIME_LIMIT_SEC = 60;
+
 // モードごとの「よい記録」のきめかた。
 // もんだいすうモードは タイムが みじかいほど、タイムアタックは 正解数が おおいほど よい。
 const MODE_META = {
   normal: {
     id: "normal",
     name: "もんだいすう",
+    setting: `${QUESTION_COUNT}もん`,
     unit: "びょう",
     better: "low",
     title: "クリアタイム",
@@ -42,6 +48,7 @@ const MODE_META = {
   timeattack: {
     id: "timeattack",
     name: "タイムアタック",
+    setting: "1ぷん",
     unit: "もん",
     better: "high",
     title: "せいかいすう",
@@ -392,11 +399,12 @@ function buildProblemBank(level) {
       }
     }
   } else if (level === 4) {
-    // 2桁－1桁のうち、くりさがりが必要なものだけ。
-    // 一の位が引く数より小さいと、十の位から借りることになる。
-    for (let a = 10; a <= 99; a++) {
-      for (let b = 1; b <= 9; b++) {
-        if (a % 10 < b) problems.push({ text: `${a} － ${b} = ?`, answer: a - b });
+    // 10〜19 から 1〜10 を引くうち、くりさがりが必要なものだけ。
+    // 一の位どうしをくらべて、引かれる側が小さいときが「くりさがり」。
+    // 引く数が10のときは一の位が0なので、くりさがりは起きない（＝出題されない）。
+    for (let a = 10; a <= 19; a++) {
+      for (let b = 1; b <= 10; b++) {
+        if (a % 10 < b % 10) problems.push({ text: `${a} － ${b} = ?`, answer: a - b });
       }
     }
   } else if (level === 5) {
@@ -1072,9 +1080,9 @@ function startQuiz() {
     correct: 0,
     wrong: 0,
     index: 0,
-    total: mode === "normal" ? Number(document.getElementById("question-count").value) : Infinity,
-    timeLimit: mode === "timeattack" ? Number(document.getElementById("time-limit").value) : null,
-    timeLeft: mode === "timeattack" ? Number(document.getElementById("time-limit").value) : null,
+    total: mode === "normal" ? QUESTION_COUNT : Infinity,
+    timeLimit: mode === "timeattack" ? TIME_LIMIT_SEC : null,
+    timeLeft: mode === "timeattack" ? TIME_LIMIT_SEC : null,
     startedAt: null, // カウントダウンが おわった ときに いれる
     timerHandle: null,
     currentAnswer: null,
@@ -1090,10 +1098,7 @@ function startQuiz() {
   state.transitioning = true;
 
   const started = state;
-  const countdownLabel =
-    mode === "timeattack"
-      ? `${levelLabel(level)}・${state.timeLimit}びょう`
-      : `${levelLabel(level)}・${state.total}もん`;
+  const countdownLabel = `${levelLabel(level)}・${MODE_META[mode].setting}`;
   runCountdown(countdownLabel, () => {
     // カウントダウン中に べつのゲームが はじまっていたら なにもしない
     if (state !== started || state.finished) return;
@@ -1267,7 +1272,7 @@ function renderResult(entry, achievement) {
   const levelInfo = LEVELS.find((l) => l.id === entry.level);
   let timeLine;
   if (entry.mode === "timeattack") {
-    timeLine = `<div>せいげんじかん: ${entry.timeLimit}びょう</div>`;
+    timeLine = `<div>せいげんじかん: ${MODE_META.timeattack.setting}</div>`;
   } else if (entry.wrong > 0) {
     timeLine = `<div>クリアタイム: ${entry.elapsedSec}びょう (じっさい${entry.rawElapsedSec}びょう + まちがい${entry.wrong}問 × ${WRONG_ANSWER_PENALTY_SEC}びょう)</div>`;
   } else {

@@ -1,4 +1,4 @@
-const CACHE_NAME = "mathapp-cache-v6";
+const CACHE_NAME = "mathapp-cache-v8";
 const ASSETS = [
   "./",
   "./index.html",
