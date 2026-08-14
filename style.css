@@ -71,43 +71,84 @@ input {
   color: var(--color-secondary-dark);
 }
 
-.level-grid {
+/* けいさんの しゅるいごとの グループ。色は --op で 1か所だけ 決める */
+.card h2.spaced {
+  margin-top: 24px;
+}
+
+.op-group {
+  margin-top: 14px;
+}
+
+.op-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 9px;
+}
+
+.op-sign {
+  width: 30px;
+  height: 30px;
+  flex: none;
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-  margin-bottom: 20px;
-}
-
-.level-btn {
-  padding: 14px 6px;
-  border: 3px solid var(--color-secondary);
-  border-radius: var(--radius);
-  background: #fff;
-  font-size: 1rem;
-  font-weight: bold;
-  cursor: pointer;
-  transition: transform 0.1s ease, background 0.15s ease;
-}
-
-.level-btn small {
-  display: block;
-  font-weight: normal;
-  font-size: 0.75rem;
-  color: #777;
-}
-
-.level-btn:hover {
-  transform: translateY(-2px);
-}
-
-.level-btn.selected {
-  background: var(--color-secondary);
+  place-items: center;
+  border-radius: 9px;
+  background: var(--op);
   color: #fff;
-  border-color: var(--color-secondary-dark);
+  font-size: 1.15rem;
+  font-weight: bold;
+  line-height: 1;
 }
 
-.level-btn.selected small {
-  color: #eef8ff;
+.op-name {
+  font-weight: bold;
+  font-size: 1rem;
+  color: var(--op);
+}
+
+.op-levels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+
+.op-levels > * {
+  min-width: 0;
+}
+
+.lv {
+  text-align: center;
+  padding: 13px 10px;
+  border: 2px solid #e7e2da;
+  border-radius: 14px;
+  background: #fff;
+  font: inherit;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.lv strong {
+  display: block;
+  font-size: 1rem;
+}
+
+.lv .best {
+  display: block;
+  margin-top: 5px;
+  font-size: 0.72rem;
+  font-weight: bold;
+  color: var(--op);
+}
+
+.lv.selected {
+  background: var(--op);
+  border-color: var(--op);
+  color: #fff;
+}
+
+.lv.selected .best {
+  color: rgba(255, 255, 255, 0.92);
 }
 
 .mode-grid {
@@ -133,12 +174,17 @@ input {
   height: 18px;
 }
 
+.mode-chip > span {
+  font-size: 0.95rem;
+  font-weight: bold;
+}
+
 .mode-chip select {
   margin-left: auto;
   padding: 6px 8px;
   border-radius: 8px;
   border: 1px solid #ccc;
-  font-size: 1rem;
+  font-size: 0.9rem;
 }
 
 .btn {
@@ -169,14 +215,6 @@ input {
 
 .btn-secondary:hover {
   background: #ddd;
-}
-
-.history-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 220px;
-  overflow-y: auto;
 }
 
 .history-item {
@@ -448,52 +486,157 @@ input {
   }
 }
 
-/* さいこうきろく */
-.best-head,
-.best-row {
-  display: grid;
-  grid-template-columns: 3.2em 1fr 1fr;
-  gap: 8px;
-  align-items: center;
-}
-
-.best-head {
-  font-size: 0.75rem;
-  color: #999;
-  padding: 0 10px 6px;
-}
-
-.best-row {
-  padding: 8px 10px;
-  margin-bottom: 6px;
-  background: #f7f7f7;
-  border-radius: 10px;
-  font-size: 0.95rem;
-}
-
-.best-lv {
-  font-weight: bold;
-  color: var(--color-secondary-dark);
-}
-
-.best-val {
-  font-weight: bold;
-}
-
-.best-val small {
-  display: block;
-  font-weight: normal;
-  font-size: 0.7rem;
-  color: #999;
-}
-
-.best-none {
-  color: #ccc;
-  font-weight: normal;
-}
-
 #btn-history {
   margin-top: 14px;
+}
+
+/* これまでのきろく：しぼりこみ */
+.filters {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 12px 0 16px;
+}
+
+.chiprow {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.chiprow.two {
+  grid-template-columns: 1fr 1fr;
+}
+
+.chiprow.two .chip {
+  font-size: 0.85rem;
+}
+
+.chiprow > * {
+  min-width: 0;
+}
+
+.chip {
+  padding: 9px 3px;
+  border: 2px solid #e7e2da;
+  border-radius: 999px;
+  background: #fff;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: bold;
+  color: #7b7268;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip[aria-pressed="true"] {
+  background: var(--op);
+  border-color: var(--op);
+  color: #fff;
+}
+
+/* これまでのきろく：まとめ */
+.summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+
+.tile {
+  background: #f7f5f1;
+  border-radius: 13px;
+  padding: 11px 12px;
+}
+
+.tile-k {
+  font-size: 0.7rem;
+  color: #7b7268;
+}
+
+.tile-v {
+  margin-top: 3px;
+  font-size: 1.5rem;
+  font-weight: bold;
+  line-height: 1.1;
+}
+
+.tile-v span {
+  font-size: 0.8rem;
+  margin-left: 1px;
+}
+
+.tile-best {
+  color: var(--op);
+}
+
+.gain {
+  margin: 9px 0 4px;
+  padding: 13px 14px;
+  border-radius: 13px;
+  background: #eef8f2;
+  border: 2px solid #cfe9db;
+}
+
+.gain-k {
+  font-size: 0.72rem;
+  color: #4a7a63;
+}
+
+.gain-v {
+  margin-top: 2px;
+  font-size: 1.4rem;
+  font-weight: bold;
+  color: #2f8f6a;
+}
+
+.gain.flat {
+  background: #f7f5f1;
+  border-color: #e7e2da;
+}
+
+.gain.flat .gain-k {
+  color: #7b7268;
+}
+
+.gain.flat .gain-v {
+  color: var(--color-text);
+}
+
+.chart-figure {
+  margin: 16px 0 0;
+}
+
+.chart-figure figcaption {
+  font-size: 0.78rem;
+  color: #7b7268;
+  margin-bottom: 6px;
+}
+
+.chart {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.history-log-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 16px 0 8px;
+}
+
+.history-tag {
+  flex-shrink: 0;
+  font-size: 0.66rem;
+  font-weight: bold;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #2f8f6a;
+  color: #fff;
+  white-space: nowrap;
 }
 
 /* これまでのきろく */
@@ -566,15 +709,123 @@ input {
   background: #fff5f5;
 }
 
-.history-rate {
-  flex-shrink: 0;
-  width: 3.2em;
-  text-align: right;
-  font-size: 0.8rem;
-  color: #999;
-}
-
 .history-item .player-edit-btn {
   padding: 6px 0;
   width: 44px;
+}
+
+/* スタート前の カウントダウン */
+.countdown {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(160deg, var(--color-bg-1), var(--color-bg-2));
+}
+
+.countdown[hidden] {
+  display: none;
+}
+
+.countdown-label {
+  position: absolute;
+  top: 32%;
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: var(--color-secondary-dark);
+  text-shadow: 2px 2px 0 #fff;
+}
+
+.countdown-num {
+  font-size: 6rem;
+  font-weight: bold;
+  color: var(--color-primary-dark);
+  text-shadow: 3px 3px 0 #fff;
+  line-height: 1;
+}
+
+.countdown-num.go {
+  font-size: 3.2rem;
+  color: var(--color-correct);
+}
+
+.countdown-num.pop {
+  animation: countdown-pop 0.45s ease-out;
+}
+
+@keyframes countdown-pop {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  45% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* さいこうきろく こうしんの おいわい */
+.confetti {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+}
+
+.confetti[hidden] {
+  display: none;
+}
+
+.celebration {
+  margin-bottom: 16px;
+  padding: 14px 12px;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, #fff3d1, #ffe0ec);
+  border: 3px solid var(--color-primary);
+  text-align: center;
+  animation: celebration-in 0.5s ease-out;
+}
+
+.celebration[hidden] {
+  display: none;
+}
+
+.celebration-title {
+  font-size: 1.25rem;
+  font-weight: bold;
+  color: var(--color-primary-dark);
+}
+
+.celebration-sub {
+  margin-top: 6px;
+  font-size: 0.9rem;
+  color: #7b7268;
+}
+
+.celebration-sub b {
+  font-size: 1.05rem;
+  color: var(--color-text);
+}
+
+@keyframes celebration-in {
+  from {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .countdown-num.pop,
+  .celebration {
+    animation: none;
+  }
 }

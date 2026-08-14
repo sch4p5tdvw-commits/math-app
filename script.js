@@ -8,15 +8,62 @@
 // レベル7: 2桁以下÷1桁のわりざん（わりきれるもの）
 // レベル8: 3桁÷1桁のわりざん（わりきれるもの）
 const LEVELS = [
-  { id: 1, label: "レベル1", hint: "1けた＋1けた（こたえも1けた）" },
-  { id: 2, label: "レベル2", hint: "1けた＋1けた（こたえは2けた）" },
-  { id: 3, label: "レベル3", hint: "1けたどうしの ひきざん" },
-  { id: 4, label: "レベル4", hint: "くりさがりの ある ひきざん" },
-  { id: 5, label: "レベル5", hint: "1けたどうしの かけざん" },
-  { id: 6, label: "レベル6", hint: "2けた×1けた の かけざん" },
-  { id: 7, label: "レベル7", hint: "2けたいか÷1けた の わりざん" },
-  { id: 8, label: "レベル8", hint: "3けた÷1けた の わりざん" },
+  { id: 1, hint: "1けた＋1けた（こたえも1けた）" },
+  { id: 2, hint: "1けた＋1けた（こたえは2けた）" },
+  { id: 3, hint: "1けたどうしの ひきざん" },
+  { id: 4, hint: "くりさがりの ある ひきざん" },
+  { id: 5, hint: "1けたどうしの かけざん" },
+  { id: 6, hint: "2けた×1けた の かけざん" },
+  { id: 7, hint: "2けたいか÷1けた の わりざん" },
+  { id: 8, hint: "3けた÷1けた の わりざん" },
 ];
+
+// 画面では「レベル1〜8」ではなく、けいさんの しゅるいごとに 2レベルずつ見せる。
+// 記録は これまでどおり 1〜8 の番号で保存するので、むかしの記録もそのまま使える。
+// 色は 4つ ならんでも 見わけられることを たしかめてある。
+const OPS = [
+  { id: "add", sign: "＋", name: "たしざん", color: "#e0568c", levels: [1, 2] },
+  { id: "sub", sign: "－", name: "ひきざん", color: "#2f7fd0", levels: [3, 4] },
+  { id: "mul", sign: "×", name: "かけざん", color: "#d9821a", levels: [5, 6] },
+  { id: "div", sign: "÷", name: "わりざん", color: "#2f8f6a", levels: [7, 8] },
+];
+
+// モードごとの「よい記録」のきめかた。
+// もんだいすうモードは タイムが みじかいほど、タイムアタックは 正解数が おおいほど よい。
+const MODE_META = {
+  normal: {
+    id: "normal",
+    name: "もんだいすう",
+    unit: "びょう",
+    better: "low",
+    title: "クリアタイム",
+    metric: (h) => h.elapsedSec,
+  },
+  timeattack: {
+    id: "timeattack",
+    name: "タイムアタック",
+    unit: "もん",
+    better: "high",
+    title: "せいかいすう",
+    metric: (h) => h.correct,
+  },
+};
+
+function opOfLevel(level) {
+  return OPS.find((op) => op.levels.includes(Number(level))) || null;
+}
+
+// 「ひきざん レベル2」のような、画面に出す名前
+function levelLabel(level) {
+  const op = opOfLevel(level);
+  if (!op) return `レベル${level}`;
+  return `${op.name} レベル${op.levels.indexOf(Number(level)) + 1}`;
+}
+
+function isBetter(value, than, better) {
+  if (than === null || than === undefined) return true;
+  return better === "low" ? value < than : value > than;
+}
 
 const HISTORY_KEY = "mathapp_history";
 const PLAYER_KEY = "mathapp_current_player";
@@ -38,6 +85,10 @@ let cloudScoreCache = [];
 let cloudPlayerCache = [];
 let playerEditMode = false;
 let historyEditMode = false;
+let selectedLevel = 1;
+let historyFilter = { op: "add", levelIndex: 0, mode: "normal" };
+let countdownHandle = null;
+let confettiHandle = null;
 
 // ===== ユーティリティ =====
 function randInt(min, max) {
@@ -656,26 +707,42 @@ function showScreen(id) {
 }
 
 // ===== スタート画面 =====
-function renderLevelGrid() {
-  const grid = document.getElementById("level-grid");
-  grid.innerHTML = "";
-  LEVELS.forEach((lv) => {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "level-btn" + (lv.id === 1 ? " selected" : "");
-    btn.dataset.level = lv.id;
-    btn.innerHTML = `${lv.label}<small>${lv.hint}</small>`;
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".level-btn").forEach((b) => b.classList.remove("selected"));
-      btn.classList.add("selected");
-    });
-    grid.appendChild(btn);
-  });
+function getSelectedMode() {
+  const checked = document.querySelector('input[name="mode"]:checked');
+  return checked ? checked.value : "normal";
 }
 
 function getSelectedLevel() {
-  const btn = document.querySelector(".level-btn.selected");
-  return btn ? Number(btn.dataset.level) : 1;
+  return selectedLevel;
+}
+
+// けいさんの しゅるいごとに、レベル1・2 の 2つを ならべる。
+// マスの中には、いま えらんでいる モードでの さいこうきろくを 出す。
+function renderOpGroups() {
+  const meta = MODE_META[getSelectedMode()];
+  const best = computeBestRecords(playerEntries());
+  const container = document.getElementById("op-groups");
+
+  container.innerHTML = OPS.map((op) => {
+    const cells = op.levels
+      .map((level, i) => {
+        const record = best[level] ? best[level][meta.id] : null;
+        const bestText = record ? `さいこう ${meta.metric(record)}${meta.unit}` : "きろくなし";
+        return `<button type="button" class="lv${level === selectedLevel ? " selected" : ""}"
+            data-level="${level}" aria-pressed="${level === selectedLevel}">
+            <strong>レベル${i + 1}</strong>
+            <span class="best">${bestText}</span>
+          </button>`;
+      })
+      .join("");
+    return `<div class="op-group" style="--op: ${op.color}">
+        <div class="op-head">
+          <span class="op-sign">${op.sign}</span>
+          <span class="op-name">${op.name}</span>
+        </div>
+        <div class="op-levels">${cells}</div>
+      </div>`;
+  }).join("");
 }
 
 // この人の記録だけを、新しい順にそろえる
@@ -704,25 +771,6 @@ function computeBestRecords(entries) {
   return best;
 }
 
-function renderBestRecords() {
-  const best = computeBestRecords(playerEntries());
-  const container = document.getElementById("best-records");
-  container.innerHTML = LEVELS.map((lv) => {
-    const slot = best[lv.id];
-    const normal = slot.normal
-      ? `${slot.normal.elapsedSec}びょう<small>${slot.normal.total}もん</small>`
-      : '<span class="best-none">-</span>';
-    const timeattack = slot.timeattack
-      ? `${slot.timeattack.correct}もん<small>${slot.timeattack.timeLimit}びょう</small>`
-      : '<span class="best-none">-</span>';
-    return `<div class="best-row">
-      <span class="best-lv">Lv${lv.id}</span>
-      <span class="best-val">${normal}</span>
-      <span class="best-val">${timeattack}</span>
-    </div>`;
-  }).join("");
-}
-
 function deleteRecord(entry) {
   // 端末内から消す
   const kept = loadHistory().filter((h) => String(h.id) !== String(entry.id));
@@ -739,83 +787,284 @@ function handleDeleteRecord(entry) {
       ? `${entry.correct}もん（${entry.timeLimit}びょう）`
       : `${entry.elapsedSec}びょう（${entry.total}もん）`;
   const ok = window.confirm(
-    `この きろくを けしますか？\n\n${when}\nレベル${entry.level}・${what}\n\n` +
+    `この きろくを けしますか？\n\n${when}\n${levelLabel(entry.level)}・${what}\n\n` +
       `けすと もとに もどせません。`
   );
   if (!ok) return;
   deleteRecord(entry);
-  renderHistoryLog();
+  renderHistory();
 }
 
-function renderHistoryLog() {
-  const entries = playerEntries();
-  const log = document.getElementById("history-log");
-  const head = document.getElementById("history-head");
-  document.getElementById("history-title").textContent = `${getCurrentPlayer()} さんのきろく`;
+// ===== これまでのきろく =====
+function historyLevel() {
+  const op = OPS.find((o) => o.id === historyFilter.op) || OPS[0];
+  return op.levels[historyFilter.levelIndex] || op.levels[0];
+}
 
-  head.innerHTML = "";
-  log.innerHTML = "";
+// スタート画面で えらんでいる レベルとモードを、そのまま きろく画面の
+// はじめの ひょうじに つかう
+function syncHistoryFilterToSelection() {
+  const op = opOfLevel(selectedLevel) || OPS[0];
+  historyFilter = {
+    op: op.id,
+    levelIndex: Math.max(0, op.levels.indexOf(selectedLevel)),
+    mode: getSelectedMode(),
+  };
+}
+
+function renderHistoryChips() {
+  const op = OPS.find((o) => o.id === historyFilter.op) || OPS[0];
+
+  document.getElementById("filter-op").innerHTML = OPS.map(
+    (o) => `<button type="button" class="chip" data-op="${o.id}" style="--op: ${o.color}"
+      aria-pressed="${o.id === historyFilter.op}">${o.sign}${o.name}</button>`
+  ).join("");
+
+  const levels = document.getElementById("filter-level");
+  levels.style.setProperty("--op", op.color);
+  levels.innerHTML = [0, 1]
+    .map(
+      (i) => `<button type="button" class="chip" data-level-index="${i}"
+        aria-pressed="${i === historyFilter.levelIndex}">レベル${i + 1}</button>`
+    )
+    .join("");
+
+  const modes = document.getElementById("filter-mode");
+  modes.style.setProperty("--op", op.color);
+  modes.innerHTML = Object.values(MODE_META)
+    .map(
+      (m) => `<button type="button" class="chip" data-mode="${m.id}"
+        aria-pressed="${m.id === historyFilter.mode}">${m.name}</button>`
+    )
+    .join("");
+}
+
+function renderHistory() {
+  document.getElementById("history-title").textContent = `${getCurrentPlayer()} さんのきろく`;
+  renderHistoryChips();
+
+  const op = OPS.find((o) => o.id === historyFilter.op) || OPS[0];
+  const level = historyLevel();
+  const meta = MODE_META[historyFilter.mode];
+  const body = document.getElementById("history-body");
+
+  // ふるい順に ならべると、そのまま「よくなってきたか」の ながれになる
+  const entries = playerEntries()
+    .filter((h) => Number(h.level) === level && h.mode === meta.id)
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
 
   if (entries.length === 0) {
     historyEditMode = false;
-    log.innerHTML = '<div class="history-empty">まだきろくがないよ</div>';
+    body.innerHTML = `<div class="history-empty">${levelLabel(level)}・${meta.name}モードの きろくは まだ ないよ</div>`;
     return;
   }
 
-  const label = document.createElement("span");
-  label.className = "player-list-label";
-  label.textContent = historyEditMode ? "けしたい きろくを えらんでね" : `ぜんぶで ${entries.length}かい`;
-  const toggle = document.createElement("button");
-  toggle.type = "button";
-  toggle.className = "btn-link";
-  toggle.textContent = historyEditMode ? "おわり" : "へんしゅう";
-  toggle.addEventListener("click", () => {
-    historyEditMode = !historyEditMode;
-    renderHistoryLog();
-  });
-  head.append(label, toggle);
+  const values = entries.map(meta.metric);
+  const bestValue = meta.better === "low" ? Math.min(...values) : Math.max(...values);
+  const first = values[0];
+  const latest = values[values.length - 1];
+  const gained = meta.better === "low" ? first - bestValue : bestValue - first;
+  const verb = meta.better === "low" ? "はやくなった" : "ふえた";
 
-  entries.forEach((h) => {
-    const row = document.createElement("div");
-    row.className = "history-item";
+  const rows = entries
+    .map((h, i) => {
+      const value = meta.metric(h);
+      const tag = value === bestValue ? '<span class="history-tag">さいこう</span>' : "";
+      const del = historyEditMode
+        ? `<button type="button" class="player-edit-btn player-delete-btn" data-del="${h.id}" title="この きろくを けす">\u{1F5D1}️</button>`
+        : "";
+      return `<div class="history-item">
+          <span class="history-main">${formatDate(h.date)}<small>${i + 1}かいめ・せいかいりつ ${h.accuracy}%</small></span>
+          ${tag}
+          <span class="history-score">${value}${meta.unit}</span>
+          ${del}
+        </div>`;
+    })
+    .reverse()
+    .join("");
 
-    const main = document.createElement("span");
-    main.className = "history-main";
-    const mode = h.mode === "timeattack" ? "タイムアタック" : "もんだいすう";
-    main.innerHTML = `${formatDate(h.date)}<small>Lv${h.level}・${mode}</small>`;
-
-    const score = document.createElement("span");
-    score.className = "history-score";
-    score.innerHTML =
-      h.mode === "timeattack"
-        ? `${h.correct}もん<small>${h.timeLimit}びょうで</small>`
-        : `${h.elapsedSec}びょう<small>${h.total}もん</small>`;
-
-    row.append(main, score);
-
-    if (historyEditMode) {
-      const del = document.createElement("button");
-      del.type = "button";
-      del.className = "player-edit-btn player-delete-btn";
-      del.textContent = "\u{1F5D1}\uFE0F";
-      del.title = "この きろくを けす";
-      del.addEventListener("click", () => handleDeleteRecord(h));
-      row.appendChild(del);
-    } else {
-      const rate = document.createElement("span");
-      rate.className = "history-rate";
-      rate.textContent = `${h.accuracy}%`;
-      row.appendChild(rate);
+  body.innerHTML = `
+    <div class="summary" style="--op: ${op.color}">
+      <div class="tile"><div class="tile-k">さいこうきろく</div>
+        <div class="tile-v tile-best">${bestValue}<span>${meta.unit}</span></div></div>
+      <div class="tile"><div class="tile-k">さいきん</div>
+        <div class="tile-v">${latest}<span>${meta.unit}</span></div></div>
+    </div>
+    ${
+      gained > 0
+        ? `<div class="gain"><div class="gain-k">はじめの ${first}${meta.unit} から</div>
+             <div class="gain-v">${gained}${meta.unit} ${verb}！</div></div>`
+        : `<div class="gain flat"><div class="gain-k">はじめの ${first}${meta.unit} から</div>
+             <div class="gain-v">これから のびるよ</div></div>`
     }
+    <figure class="chart-figure">
+      <figcaption>${meta.title}の うつりかわり（うえに いくほど よい）</figcaption>
+      ${renderChart(values, op.color, meta)}
+    </figure>
+    <div class="history-log-head">
+      <span class="player-list-label">${
+        historyEditMode ? "けしたい きろくを えらんでね" : `ぜんぶで ${entries.length}かい`
+      }</span>
+      <button type="button" class="btn-link" id="history-edit-toggle">${
+        historyEditMode ? "おわり" : "へんしゅう"
+      }</button>
+    </div>
+    <div class="history-log">${rows}</div>`;
 
-    log.appendChild(row);
+  document.getElementById("history-edit-toggle").addEventListener("click", () => {
+    historyEditMode = !historyEditMode;
+    renderHistory();
   });
+  body.querySelectorAll("[data-del]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const entry = entries.find((h) => String(h.id) === btn.dataset.del);
+      if (entry) handleDeleteRecord(entry);
+    });
+  });
+}
+
+// 記録の うつりかわりを 折れ線で見せる。1つの系列だけなので凡例はいらない。
+// どちらのモードでも「よい記録ほど上」になるよう、タイムのときは たてじくを 反転する。
+function renderChart(values, color, meta) {
+  const W = 380;
+  const H = 190;
+  const P = { t: 34, r: 16, b: 30, l: 40 };
+  const iw = W - P.l - P.r;
+  const ih = H - P.t - P.b;
+  const lowerIsBetter = meta.better === "low";
+
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  const pad = Math.max(lowerIsBetter ? 6 : 2, Math.round((max - min) * 0.25));
+  const lo = Math.max(0, min - pad);
+  const hi = max + pad;
+
+  const x = (i) => P.l + (values.length === 1 ? iw / 2 : (i / (values.length - 1)) * iw);
+  const y = (v) => {
+    const t = (v - lo) / (hi - lo || 1);
+    return P.t + (lowerIsBetter ? t : 1 - t) * ih;
+  };
+
+  const grid = [lo, (lo + hi) / 2, hi]
+    .map((v) => Math.round(v))
+    .map(
+      (v) => `<line x1="${P.l}" y1="${y(v).toFixed(1)}" x2="${W - P.r}" y2="${y(v).toFixed(1)}"
+        stroke="#ece7df" stroke-width="1"/>
+      <text x="${P.l - 7}" y="${(y(v) + 4).toFixed(1)}" font-size="10" fill="#a9a29a"
+        text-anchor="end">${v}</text>`
+    )
+    .join("");
+
+  const line = values.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const base = P.t + ih;
+  const area = `${line} L${x(values.length - 1).toFixed(1)},${base} L${x(0).toFixed(1)},${base} Z`;
+
+  const bestI = values.indexOf(lowerIsBetter ? min : max);
+  const lastI = values.length - 1;
+
+  // 5とがりの星。さいこうの点だけ 星にして ひと目で わかるようにする
+  const star = (cx, cy, r) => {
+    const pts = [];
+    for (let k = 0; k < 10; k++) {
+      const rad = k % 2 ? r * 0.44 : r;
+      const ang = (Math.PI / 5) * k - Math.PI / 2;
+      pts.push(`${(cx + rad * Math.cos(ang)).toFixed(1)},${(cy + rad * Math.sin(ang)).toFixed(1)}`);
+    }
+    return pts.join(" ");
+  };
+
+  const dots = values
+    .map((v, i) => {
+      const cx = x(i);
+      const cy = y(v);
+      const tip = `<title>${i + 1}かいめ ${v}${meta.unit}</title>`;
+      if (i === bestI) {
+        // 線の上に のせるので、白いふちどりで うかせる
+        return `<polygon points="${star(cx, cy, 10)}" fill="${color}" stroke="#fff"
+          stroke-width="2" stroke-linejoin="round">${tip}</polygon>`;
+      }
+      return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${i === lastI ? 6 : 3.5}"
+        fill="${i === lastI ? color : "#fff"}" stroke="${color}" stroke-width="2">${tip}</circle>`;
+    })
+    .join("");
+
+  // 文字を出すのは さいこう と さいきん だけ。はしでは よせを かえて はみ出しを ふせぐ
+  const label = (i, text, yy) => {
+    const px = x(i);
+    const anchor = px < P.l + 36 ? "start" : px > W - P.r - 36 ? "end" : "middle";
+    const nudge = anchor === "start" ? -4 : anchor === "end" ? 4 : 0;
+    return `<text x="${(px + nudge).toFixed(1)}" y="${yy.toFixed(1)}" font-size="10.5"
+      font-weight="700" fill="${color}" text-anchor="${anchor}">${text}</text>`;
+  };
+  // よい記録ほど上なので、さいこうの点の上は かならず あいている
+  const labelBest = label(bestI, `さいこう ${values[bestI]}`, y(values[bestI]) - 15);
+  const labelLast = lastI === bestI ? "" : label(lastI, `さいきん ${values[lastI]}`, y(values[lastI]) + 17);
+
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img"
+      aria-label="${meta.title}の うつりかわり。はじめ ${values[0]}${meta.unit}、さいこう ${values[bestI]}${meta.unit}。うえに いくほど よい記録。">
+    ${grid}
+    <path d="${area}" fill="${color}" opacity="0.1"/>
+    <path d="${line}" fill="none" stroke="${color}" stroke-width="2"
+      stroke-linejoin="round" stroke-linecap="round"/>
+    ${dots}${labelBest}${labelLast}
+    <text x="${P.l}" y="${H - 9}" font-size="10" fill="#a9a29a">1かいめ</text>
+    ${
+      values.length > 1
+        ? `<text x="${W - P.r}" y="${H - 9}" font-size="10" fill="#a9a29a" text-anchor="end">${values.length}かいめ</text>`
+        : ""
+    }
+  </svg>`;
+}
+
+// ===== カウントダウン =====
+function playCountdownTick(isGo) {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  if (isGo) {
+    playTone(ctx, 880, now, 0.28, "sine", 0.22);
+    playTone(ctx, 1320, now + 0.05, 0.3, "sine", 0.16);
+  } else {
+    playTone(ctx, 620, now, 0.12, "sine", 0.18);
+  }
+}
+
+// 3・2・1・スタート！ を出してから はじめる。
+// タイマーも 出題も、カウントダウンが おわってから うごきだす。
+function runCountdown(label, onDone) {
+  const overlay = document.getElementById("countdown");
+  const num = document.getElementById("countdown-num");
+  document.getElementById("countdown-label").textContent = label;
+  const steps = ["3", "2", "1", "スタート！"];
+  let i = 0;
+
+  if (countdownHandle) clearTimeout(countdownHandle);
+  overlay.hidden = false;
+
+  const tick = () => {
+    if (i >= steps.length) {
+      countdownHandle = null;
+      overlay.hidden = true;
+      onDone();
+      return;
+    }
+    num.textContent = steps[i];
+    num.classList.toggle("go", i === steps.length - 1);
+    // 同じアニメーションを もう一度 さいせいさせる
+    num.classList.remove("pop");
+    void num.offsetWidth;
+    num.classList.add("pop");
+    playCountdownTick(i === steps.length - 1);
+    i += 1;
+    countdownHandle = setTimeout(tick, 700);
+  };
+  tick();
 }
 
 // ===== クイズ開始 =====
 function startQuiz() {
   const level = getSelectedLevel();
-  const mode = document.querySelector('input[name="mode"]:checked').value;
+  const mode = getSelectedMode();
 
   state = {
     level,
@@ -826,7 +1075,7 @@ function startQuiz() {
     total: mode === "normal" ? Number(document.getElementById("question-count").value) : Infinity,
     timeLimit: mode === "timeattack" ? Number(document.getElementById("time-limit").value) : null,
     timeLeft: mode === "timeattack" ? Number(document.getElementById("time-limit").value) : null,
-    startedAt: Date.now(),
+    startedAt: null, // カウントダウンが おわった ときに いれる
     timerHandle: null,
     currentAnswer: null,
     inputBuffer: "",
@@ -837,17 +1086,31 @@ function startQuiz() {
   showScreen("screen-quiz");
   document.getElementById("quiz-timer").textContent = mode === "timeattack" ? `⏱ ${state.timeLeft}s` : "";
   nextQuestion();
+  // カウントダウン中は こたえられないようにしておく
+  state.transitioning = true;
 
-  if (mode === "timeattack") {
-    state.timerHandle = setInterval(() => {
-      state.timeLeft -= 1;
-      document.getElementById("quiz-timer").textContent = `⏱ ${state.timeLeft}s`;
-      if (state.timeLeft <= 0) {
-        clearInterval(state.timerHandle);
-        finishQuiz();
-      }
-    }, 1000);
-  }
+  const started = state;
+  const countdownLabel =
+    mode === "timeattack"
+      ? `${levelLabel(level)}・${state.timeLimit}びょう`
+      : `${levelLabel(level)}・${state.total}もん`;
+  runCountdown(countdownLabel, () => {
+    // カウントダウン中に べつのゲームが はじまっていたら なにもしない
+    if (state !== started || state.finished) return;
+    state.startedAt = Date.now();
+    state.transitioning = false;
+
+    if (mode === "timeattack") {
+      state.timerHandle = setInterval(() => {
+        state.timeLeft -= 1;
+        document.getElementById("quiz-timer").textContent = `⏱ ${state.timeLeft}s`;
+        if (state.timeLeft <= 0) {
+          clearInterval(state.timerHandle);
+          finishQuiz();
+        }
+      }, 1000);
+    }
+  });
 }
 
 function updateQuizStatus() {
@@ -936,7 +1199,7 @@ function finishQuiz() {
   if (state.timerHandle) clearInterval(state.timerHandle);
   const totalAnswered = state.correct + state.wrong;
   const accuracy = totalAnswered > 0 ? Math.round((state.correct / totalAnswered) * 100) : 0;
-  const rawElapsedSec = Math.round((Date.now() - state.startedAt) / 1000);
+  const rawElapsedSec = Math.round((Date.now() - (state.startedAt || Date.now())) / 1000);
   const penaltySec = state.mode === "normal" ? state.wrong * WRONG_ANSWER_PENALTY_SEC : 0;
   const elapsedSec = rawElapsedSec + penaltySec;
 
@@ -954,6 +1217,10 @@ function finishQuiz() {
     elapsedSec,
     rawElapsedSec,
   };
+  // 保存する まえに くらべないと、いまの記録自体が「これまでの さいこう」に
+  // なってしまい、こうしんに 気づけなくなる
+  const achievement = judgeAchievement(entry);
+
   saveHistoryEntry(entry);
   const cached = { ...entry };
   cloudScoreCache = mergeScores(cloudScoreCache, [cached]);
@@ -961,13 +1228,41 @@ function finishQuiz() {
     if (key) cached._key = key;
   });
 
-  renderResult(entry);
+  renderResult(entry, achievement);
   showScreen("screen-result");
+  if (achievement) celebrate();
 }
 
-function renderResult(entry) {
+// これまでの さいこうきろくと くらべて、はじめての きろくか、
+// こうしんか、そうでないかを かえす
+function judgeAchievement(entry) {
+  const meta = MODE_META[entry.mode];
+  const slot = computeBestRecords(playerEntries())[entry.level];
+  const previous = slot ? slot[entry.mode] : null;
+  const value = meta.metric(entry);
+  if (!previous) return { kind: "first", value, meta };
+  if (!isBetter(value, meta.metric(previous), meta.better)) return null;
+  return { kind: "best", value, previous: meta.metric(previous), meta };
+}
+
+function renderResult(entry, achievement) {
   document.getElementById("result-title").textContent =
     entry.mode === "timeattack" ? "タイムアタック けっか" : "けっか";
+
+  const banner = document.getElementById("result-celebration");
+  if (achievement) {
+    const meta = achievement.meta;
+    banner.hidden = false;
+    banner.innerHTML =
+      achievement.kind === "best"
+        ? `<div class="celebration-title">🎉 さいこうきろく こうしん！ 🎉</div>
+           <div class="celebration-sub">これまでの ${achievement.previous}${meta.unit} → <b>${achievement.value}${meta.unit}</b></div>`
+        : `<div class="celebration-title">🎉 はじめての きろく！ 🎉</div>
+           <div class="celebration-sub">${levelLabel(entry.level)}・${meta.name}モード ${achievement.value}${meta.unit}</div>`;
+  } else {
+    banner.hidden = true;
+    banner.innerHTML = "";
+  }
 
   const levelInfo = LEVELS.find((l) => l.id === entry.level);
   let timeLine;
@@ -983,9 +1278,102 @@ function renderResult(entry) {
     <div class="big">${entry.correct} もん せいかい！</div>
     <div>せいかいりつ: ${entry.accuracy}%</div>
     <div>といたもんすう: ${entry.total}もん (まちがい ${entry.wrong}もん)</div>
-    <div>レベル: ${entry.level} (${levelInfo ? levelInfo.hint : ""})</div>
+    <div>${levelLabel(entry.level)} (${levelInfo ? levelInfo.hint : ""})</div>
     ${timeLine}
   `;
+}
+
+// ===== クラッカー =====
+function playFanfare() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  playTone(ctx, 1500, now, 0.06, "square", 0.12); // パンッ
+  [523, 659, 784, 1047].forEach((freq, i) => {
+    playTone(ctx, freq, now + 0.08 + i * 0.1, 0.22, "triangle", 0.2);
+  });
+}
+
+// 左下と右下から 紙ふぶきを ななめに うちあげる
+function celebrate() {
+  playFanfare();
+  if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+  const canvas = document.getElementById("confetti");
+  const ctx = canvas.getContext ? canvas.getContext("2d") : null;
+  if (!ctx) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = `${w}px`;
+  canvas.style.height = `${h}px`;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  canvas.hidden = false;
+
+  const colors = ["#e0568c", "#2f7fd0", "#d9821a", "#2f8f6a", "#ffd23f", "#9b5de5"];
+  const pieces = [];
+  [
+    { x: 10, y: h - 10, dir: 1 },
+    { x: w - 10, y: h - 10, dir: -1 },
+  ].forEach((origin) => {
+    for (let i = 0; i < 70; i++) {
+      const angle = (-70 + Math.random() * 45) * (Math.PI / 180);
+      const speed = 11 + Math.random() * 11;
+      pieces.push({
+        x: origin.x,
+        y: origin.y,
+        vx: Math.cos(angle) * speed * origin.dir,
+        vy: Math.sin(angle) * speed,
+        w: 6 + Math.random() * 6,
+        h: 9 + Math.random() * 7,
+        rot: Math.random() * Math.PI,
+        vr: (Math.random() - 0.5) * 0.35,
+        color: colors[Math.floor(Math.random() * colors.length)],
+      });
+    }
+  });
+
+  if (confettiHandle) cancelAnimationFrame(confettiHandle);
+  const startedAt = performance.now();
+
+  const frame = (now) => {
+    const life = now - startedAt;
+    ctx.clearRect(0, 0, w, h);
+    pieces.forEach((p) => {
+      p.vy += 0.32; // じゅうりょく
+      p.vx *= 0.99;
+      p.x += p.vx;
+      p.y += p.vy;
+      p.rot += p.vr;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.globalAlpha = Math.max(0, 1 - life / 2600);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      ctx.restore();
+    });
+    if (life < 2600) {
+      confettiHandle = requestAnimationFrame(frame);
+    } else {
+      confettiHandle = null;
+      ctx.clearRect(0, 0, w, h);
+      canvas.hidden = true;
+    }
+  };
+  confettiHandle = requestAnimationFrame(frame);
+}
+
+function stopCelebration() {
+  if (confettiHandle) {
+    cancelAnimationFrame(confettiHandle);
+    confettiHandle = null;
+  }
+  const canvas = document.getElementById("confetti");
+  canvas.hidden = true;
 }
 
 // ===== 初期化 =====
@@ -998,9 +1386,10 @@ function renderGroupBar() {
 }
 
 function enterStartScreen() {
+  stopCelebration();
   renderPlayerBar();
   renderGroupBar();
-  renderBestRecords();
+  renderOpGroups();
   showScreen("screen-start");
 }
 
@@ -1023,7 +1412,7 @@ async function syncAndRoute() {
 
 async function init() {
   maybeResetHistory();
-  renderLevelGrid();
+  renderOpGroups();
 
   // クラウドが使えるかどうかに関わらず、まず今ある情報で画面を出す
   const cloudReady = initCloud();
@@ -1086,10 +1475,48 @@ async function init() {
     enterPlayerScreen();
   });
 
+  document.getElementById("op-groups").addEventListener("click", (e) => {
+    const btn = e.target.closest(".lv");
+    if (!btn) return;
+    selectedLevel = Number(btn.dataset.level);
+    renderOpGroups();
+  });
+
+  // モードによって「よい記録」の意味が変わるので、マスの中の
+  // さいこうきろくも あわせて 出しなおす
+  document.querySelectorAll('input[name="mode"]').forEach((radio) => {
+    radio.addEventListener("change", renderOpGroups);
+  });
+
   document.getElementById("btn-history").addEventListener("click", () => {
     historyEditMode = false;
-    renderHistoryLog();
+    syncHistoryFilterToSelection();
+    renderHistory();
     showScreen("screen-history");
+  });
+
+  document.getElementById("filter-op").addEventListener("click", (e) => {
+    const chip = e.target.closest(".chip");
+    if (!chip) return;
+    historyFilter.op = chip.dataset.op;
+    historyEditMode = false;
+    renderHistory();
+  });
+
+  document.getElementById("filter-level").addEventListener("click", (e) => {
+    const chip = e.target.closest(".chip");
+    if (!chip) return;
+    historyFilter.levelIndex = Number(chip.dataset.levelIndex);
+    historyEditMode = false;
+    renderHistory();
+  });
+
+  document.getElementById("filter-mode").addEventListener("click", (e) => {
+    const chip = e.target.closest(".chip");
+    if (!chip) return;
+    historyFilter.mode = chip.dataset.mode;
+    historyEditMode = false;
+    renderHistory();
   });
 
   document.getElementById("btn-history-back").addEventListener("click", enterStartScreen);
@@ -1100,7 +1527,10 @@ async function init() {
     if (!btn) return;
     handleKeyPress(btn.dataset.key);
   });
-  document.getElementById("btn-retry").addEventListener("click", startQuiz);
+  document.getElementById("btn-retry").addEventListener("click", () => {
+    stopCelebration();
+    startQuiz();
+  });
   document.getElementById("btn-back").addEventListener("click", enterStartScreen);
 
   if ("serviceWorker" in navigator) {

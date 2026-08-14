@@ -59,10 +59,10 @@
     </div>
 
     <div class="card">
-      <h2>レベルをえらんでね</h2>
-      <div class="level-grid" id="level-grid"></div>
+      <h2>なにを れんしゅうする？</h2>
+      <div id="op-groups"></div>
 
-      <h2>モードをえらんでね</h2>
+      <h2 class="spaced">モードをえらんでね</h2>
       <div class="mode-grid">
         <label class="mode-chip">
           <input type="radio" name="mode" value="normal" checked>
@@ -85,16 +85,6 @@
       </div>
 
       <button id="btn-start" class="btn btn-primary">スタート！</button>
-    </div>
-
-    <div class="card">
-      <h2>さいこうきろく</h2>
-      <div class="best-head">
-        <span class="best-head-lv"></span>
-        <span>もんだいすう</span>
-        <span>タイムアタック</span>
-      </div>
-      <div id="best-records" class="best-records"></div>
       <button type="button" id="btn-history" class="btn btn-secondary">これまでのきろくをみる</button>
     </div>
   </section>
@@ -103,8 +93,12 @@
   <section id="screen-history" class="screen" hidden>
     <div class="card">
       <h2 id="history-title">これまでのきろく</h2>
-      <div id="history-head" class="player-list-head"></div>
-      <div id="history-log" class="history-log"></div>
+      <div class="filters">
+        <div class="chiprow" id="filter-op"></div>
+        <div class="chiprow two" id="filter-level"></div>
+        <div class="chiprow two" id="filter-mode"></div>
+      </div>
+      <div id="history-body"></div>
       <button type="button" id="btn-history-back" class="btn btn-secondary">もどる</button>
     </div>
   </section>
@@ -144,6 +138,7 @@
   <section id="screen-result" class="screen" hidden>
     <div class="card">
       <h2 id="result-title">けっか</h2>
+      <div id="result-celebration" class="celebration" hidden></div>
       <div class="result-stats" id="result-stats"></div>
 
       <button id="btn-retry" class="btn btn-primary">もういちど</button>
@@ -151,6 +146,15 @@
     </div>
   </section>
 </div>
+
+<!-- スタート前の 3・2・1 カウントダウン -->
+<div id="countdown" class="countdown" hidden aria-hidden="true">
+  <div id="countdown-label" class="countdown-label"></div>
+  <div id="countdown-num" class="countdown-num"></div>
+</div>
+
+<!-- さいこうきろくを こうしんしたときの クラッカー -->
+<canvas id="confetti" class="confetti" hidden aria-hidden="true"></canvas>
 
 <script src="firebase-config.js"></script>
 <script src="script.js"></script>
