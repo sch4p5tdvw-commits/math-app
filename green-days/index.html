@@ -81,6 +81,10 @@
         <h2>売上を記録する</h2>
         <form id="sale-form" class="form" autocomplete="off">
           <label class="field">
+            <span>店舗</span>
+            <select id="sale-store" required></select>
+          </label>
+          <label class="field">
             <span>商品</span>
             <select id="sale-product" required></select>
           </label>
@@ -133,12 +137,16 @@
             ※ 文字の読み取りはスマホ本体の機能で行われます。このアプリが画像や文章を外部へ送ることはありません。
           </p>
         </details>
+        <label class="field">
+          <span>店舗（文章から読み取れなかった行に使います）</span>
+          <select id="import-default-store"></select>
+        </label>
         <textarea id="import-text" class="import-textarea" rows="8" placeholder="ここにチャットの文章を貼り付け
 
 例：
-8/25
-りんご 3個 450円
-トマト×2 ¥600"></textarea>
+8/25 鹿沼店
+きゅうり 3個 450円
+なす×2 ¥600"></textarea>
         <div class="form-actions">
           <button type="button" id="btn-import-parse" class="btn btn-primary">解析する</button>
           <button type="button" id="btn-import-back" class="btn btn-secondary">もどる</button>
@@ -163,6 +171,7 @@
           <h2>商品・在庫一覧</h2>
           <button type="button" id="btn-new-product" class="btn btn-secondary btn-compact">＋ 商品追加</button>
         </div>
+        <div class="chiprow" id="stock-store-chips"></div>
         <div id="product-list" class="list"></div>
       </div>
     </section>
@@ -187,14 +196,14 @@
               <input type="number" id="product-price" min="0" step="1" required>
             </label>
             <label class="field">
-              <span>在庫数</span>
-              <input type="number" id="product-stock" min="0" step="1" value="0" required>
+              <span>在庫少アラートのしきい値</span>
+              <input type="number" id="product-low-stock" min="0" step="1" value="5" required>
             </label>
           </div>
-          <label class="field">
-            <span>在庫少アラートのしきい値</span>
-            <input type="number" id="product-low-stock" min="0" step="1" value="5" required>
-          </label>
+          <div class="field">
+            <span>店舗ごとの在庫数</span>
+            <div id="product-stock-rows" class="stock-rows"></div>
+          </div>
           <div class="form-actions">
             <button type="submit" class="btn btn-primary">保存する</button>
             <button type="button" id="btn-product-delete" class="btn btn-danger" hidden>この商品を削除</button>
@@ -205,6 +214,10 @@
       <div class="card">
         <h2>入荷・棚卸し</h2>
         <form id="restock-form" class="form" autocomplete="off">
+          <label class="field">
+            <span>店舗</span>
+            <select id="restock-store" required></select>
+          </label>
           <div class="field-row">
             <label class="field">
               <span>種類</span>
@@ -242,6 +255,7 @@
           <button type="button" class="chip" data-range="all">すべて</button>
           <button type="button" class="chip" data-range="custom">期間指定</button>
         </div>
+        <div class="chiprow" id="report-store-chips"></div>
         <div id="report-custom-range" class="field-row" hidden>
           <label class="field">
             <span>開始日</span>
@@ -266,6 +280,10 @@
       <div class="card">
         <h2>商品別ランキング</h2>
         <div id="report-ranking" class="list"></div>
+      </div>
+      <div class="card">
+        <h2>店舗別ランキング</h2>
+        <div id="report-store-ranking" class="list"></div>
       </div>
     </section>
 
@@ -325,6 +343,22 @@
           バックアップファイルを読み込む
           <input type="file" id="import-file" accept="application/json,.json" hidden>
         </label>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>店舗の管理</h2>
+          <span class="badge badge-neutral" id="store-count">0</span>
+        </div>
+        <p class="note">
+          売上・出荷・在庫は店舗ごとに記録されます。店舗を削除しても、
+          過去の売上の記録は残ります。
+        </p>
+        <div id="store-list" class="list"></div>
+        <form id="store-form" class="name-entry" autocomplete="off">
+          <input type="text" id="store-name-input" maxlength="20" placeholder="あたらしい店舗名" required>
+          <button type="submit" class="btn btn-secondary btn-compact">追加</button>
+        </form>
       </div>
 
       <div class="card">

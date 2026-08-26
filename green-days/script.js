@@ -37,23 +37,117 @@ function formatYen(n) {
 }
 
 function emptyDB() {
-  return { products: [], sales: [], restocks: [] };
+  return { stores: [], products: [], sales: [], restocks: [] };
+}
+
+/**
+ * 読み込んだデータを今の形にそろえる。
+ * 店舗を持たない古いデータは「本店」ひとつに寄せる。
+ */
+function normalizeDB(parsed) {
+  const next = {
+    stores: Array.isArray(parsed.stores) ? parsed.stores : [],
+    products: Array.isArray(parsed.products) ? parsed.products : [],
+    sales: Array.isArray(parsed.sales) ? parsed.sales : [],
+    restocks: Array.isArray(parsed.restocks) ? parsed.restocks : [],
+  };
+
+  const hasContent = next.products.length > 0 || next.sales.length > 0 || next.restocks.length > 0;
+  let fallback = next.stores[0] || null;
+  if (!fallback && hasContent) {
+    fallback = { id: uid(), name: "本店", createdAt: Date.now() };
+    next.stores.push(fallback);
+  }
+
+  next.products.forEach((p) => {
+    if (!p.stockByStore || typeof p.stockByStore !== "object") {
+      p.stockByStore = {};
+      if (typeof p.stock === "number" && fallback) p.stockByStore[fallback.id] = p.stock;
+    }
+    delete p.stock;
+  });
+
+  [next.sales, next.restocks].forEach((list) => {
+    list.forEach((row) => {
+      if (!row.storeId && fallback) {
+        row.storeId = fallback.id;
+        row.storeName = fallback.name;
+      }
+    });
+  });
+
+  return next;
 }
 
 function loadDB() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return emptyDB();
-    const parsed = JSON.parse(raw);
-    return {
-      products: Array.isArray(parsed.products) ? parsed.products : [],
-      sales: Array.isArray(parsed.sales) ? parsed.sales : [],
-      restocks: Array.isArray(parsed.restocks) ? parsed.restocks : [],
-    };
+    return normalizeDB(JSON.parse(raw));
   } catch (e) {
     console.error("データの読み込みに失敗しました", e);
     return emptyDB();
   }
+}
+
+function findStore(id) {
+  return db.stores.find((s) => s.id === id) || null;
+}
+
+function getStock(product, storeId) {
+  if (!product || !product.stockByStore) return 0;
+  return Number(product.stockByStore[storeId]) || 0;
+}
+
+function setStock(product, storeId, qty) {
+  if (!product.stockByStore) product.stockByStore = {};
+  product.stockByStore[storeId] = qty;
+}
+
+function addStock(product, storeId, delta) {
+  setStock(product, storeId, getStock(product, storeId) + delta);
+}
+
+function totalStock(product) {
+  if (!product || !product.stockByStore) return 0;
+  return Object.values(product.stockByStore).reduce((sum, v) => sum + (Number(v) || 0), 0);
+}
+
+/**
+ * しきい値を下回っている 店舗×商品。
+ * その店舗で扱ったことのある商品だけを対象にする。すべての組み合わせを
+ * 見ると、置いていない商品が在庫0として大量に並んでしまうため。
+ */
+function lowStockEntries() {
+  const out = [];
+  db.products.forEach((product) => {
+    db.stores.forEach((store) => {
+      if (!product.stockByStore || !Object.prototype.hasOwnProperty.call(product.stockByStore, store.id)) return;
+      const qty = getStock(product, store.id);
+      if (qty <= product.lowStock) out.push({ product, store, qty });
+    });
+  });
+  return out;
+}
+
+/** select 要素に店舗の一覧を入れる */
+function fillStoreSelect(select, selectedId) {
+  select.innerHTML = "";
+  if (db.stores.length === 0) {
+    const opt = document.createElement("option");
+    opt.textContent = "先に「設定」で店舗を登録してください";
+    opt.disabled = true;
+    opt.selected = true;
+    select.appendChild(opt);
+    return;
+  }
+  db.stores.forEach((store) => {
+    const opt = document.createElement("option");
+    opt.value = store.id;
+    opt.textContent = store.name;
+    if (store.id === selectedId) opt.selected = true;
+    select.appendChild(opt);
+  });
 }
 
 function saveDB() {
@@ -77,7 +171,7 @@ function saveDB() {
 
 /** 記録の総件数（バックアップが必要かの判定に使う） */
 function totalRecordCount() {
-  return db.products.length + db.sales.length + db.restocks.length;
+  return db.stores.length + db.products.length + db.sales.length + db.restocks.length;
 }
 
 // ---------- 復元ポイント（自動スナップショット） ----------
@@ -255,26 +349,24 @@ function renderHome() {
   document.getElementById("home-month-total").textContent = formatYen(monthTotal);
   document.getElementById("home-month-qty").textContent = String(monthQty);
 
-  const lowStock = db.products.filter((p) => p.stock <= p.lowStock);
+  const lowStock = lowStockEntries().sort((a, b) => a.qty - b.qty);
   document.getElementById("home-low-stock-badge").textContent = String(lowStock.length);
   const lowStockList = document.getElementById("home-low-stock-list");
   lowStockList.innerHTML = "";
   if (lowStock.length === 0) {
     lowStockList.innerHTML = `<div class="list-empty">在庫少の商品はありません</div>`;
   } else {
-    lowStock
-      .sort((a, b) => a.stock - b.stock)
-      .forEach((p) => {
-        lowStockList.appendChild(
-          buildListItem({
-            title: p.name,
-            sub: `しきい値 ${p.lowStock}`,
-            value: `残り ${p.stock}`,
-            low: true,
-            onClick: () => openProductForm(p.id),
-          })
-        );
-      });
+    lowStock.forEach((entry) => {
+      lowStockList.appendChild(
+        buildListItem({
+          title: `${entry.store.name}　${entry.product.name}`,
+          sub: `しきい値 ${entry.product.lowStock}`,
+          value: `残り ${entry.qty}`,
+          low: true,
+          onClick: () => openProductForm(entry.product.id),
+        })
+      );
+    });
   }
 
   const recent = [...db.sales].sort((a, b) => b.createdAt - a.createdAt).slice(0, 5);
@@ -287,7 +379,7 @@ function renderHome() {
       recentList.appendChild(
         buildListItem({
           title: s.productName,
-          sub: `${s.date}・${s.qty}個`,
+          sub: `${s.storeName || "―"}・${s.date}・${s.qty}個`,
           value: formatYen(s.total),
         })
       );
@@ -344,7 +436,22 @@ function buildListItem({ title, sub, value, low, onClick, onDelete }) {
 // ---------- 売上入力 ----------
 
 function renderSaleScreen() {
+  const storeSelect = document.getElementById("sale-store");
+  fillStoreSelect(storeSelect, storeSelect.value);
+
+  renderSaleProductOptions();
+  document.getElementById("sale-date").value = todayStr();
+  document.getElementById("sale-qty").value = "1";
+  document.getElementById("sale-memo").value = "";
+  syncSalePriceFromProduct();
+  updateSalePreview();
+}
+
+/** 選択中の店舗の在庫を添えて、商品の選択肢を作り直す */
+function renderSaleProductOptions() {
   const select = document.getElementById("sale-product");
+  const keep = select.value;
+  const storeId = document.getElementById("sale-store").value;
   select.innerHTML = "";
   if (db.products.length === 0) {
     const opt = document.createElement("option");
@@ -352,19 +459,15 @@ function renderSaleScreen() {
     opt.disabled = true;
     opt.selected = true;
     select.appendChild(opt);
-  } else {
-    db.products.forEach((p) => {
-      const opt = document.createElement("option");
-      opt.value = p.id;
-      opt.textContent = `${p.name}（在庫 ${p.stock}）`;
-      select.appendChild(opt);
-    });
+    return;
   }
-  document.getElementById("sale-date").value = todayStr();
-  document.getElementById("sale-qty").value = "1";
-  document.getElementById("sale-memo").value = "";
-  syncSalePriceFromProduct();
-  updateSalePreview();
+  db.products.forEach((p) => {
+    const opt = document.createElement("option");
+    opt.value = p.id;
+    opt.textContent = `${p.name}（在庫 ${getStock(p, storeId)}）`;
+    if (p.id === keep) opt.selected = true;
+    select.appendChild(opt);
+  });
 }
 
 function syncSalePriceFromProduct() {
@@ -379,15 +482,24 @@ function updateSalePreview() {
   document.getElementById("sale-total-preview").textContent = formatYen(qty * price);
 
   const productId = document.getElementById("sale-product").value;
+  const storeId = document.getElementById("sale-store").value;
   const product = findProduct(productId);
   const warning = document.getElementById("sale-stock-warning");
-  if (product && qty > product.stock) {
+  const stock = getStock(product, storeId);
+  if (product && qty > stock) {
+    const store = findStore(storeId);
     warning.hidden = false;
-    warning.textContent = `⚠ 在庫（${product.stock}）を超えています。記録すると在庫はマイナスになります。`;
+    warning.textContent =
+      `⚠ ${store ? store.name + "の" : ""}在庫（${stock}）を超えています。記録すると在庫はマイナスになります。`;
   } else {
     warning.hidden = true;
   }
 }
+
+document.getElementById("sale-store").addEventListener("change", () => {
+  renderSaleProductOptions();
+  updateSalePreview();
+});
 
 document.getElementById("sale-product").addEventListener("change", () => {
   syncSalePriceFromProduct();
@@ -400,6 +512,11 @@ document.getElementById("sale-form").addEventListener("submit", (e) => {
   e.preventDefault();
   const productId = document.getElementById("sale-product").value;
   const product = findProduct(productId);
+  const store = findStore(document.getElementById("sale-store").value);
+  if (!store) {
+    showToast("店舗を選択してください");
+    return;
+  }
   if (!product) {
     showToast("商品を選択してください");
     return;
@@ -417,12 +534,15 @@ document.getElementById("sale-form").addEventListener("submit", (e) => {
     showToast("単価を正しく入力してください");
     return;
   }
-  if (qty > product.stock) {
-    if (!confirm(`在庫（${product.stock}）を超えています。このまま記録しますか？`)) return;
+  const stock = getStock(product, store.id);
+  if (qty > stock) {
+    if (!confirm(`${store.name}の在庫（${stock}）を超えています。このまま記録しますか？`)) return;
   }
 
-  const sale = {
+  db.sales.push({
     id: uid(),
+    storeId: store.id,
+    storeName: store.name,
     productId: product.id,
     productName: product.name,
     qty,
@@ -431,9 +551,8 @@ document.getElementById("sale-form").addEventListener("submit", (e) => {
     date,
     memo,
     createdAt: Date.now(),
-  };
-  db.sales.push(sale);
-  product.stock -= qty;
+  });
+  addStock(product, store.id, -qty);
   saveDB();
   showToast("売上を記録しました");
   showScreen("home");
@@ -441,26 +560,65 @@ document.getElementById("sale-form").addEventListener("submit", (e) => {
 
 // ---------- 在庫・商品管理 ----------
 
+/** 在庫画面で選択中の店舗。空文字なら全店合計 */
+let stockStoreFilter = "";
+
 function renderStockList() {
+  renderStockStoreChips();
+
   const list = document.getElementById("product-list");
   list.innerHTML = "";
   if (db.products.length === 0) {
     list.innerHTML = `<div class="list-empty">まだ商品が登録されていません。「＋ 商品追加」から登録してください</div>`;
     return;
   }
+
+  const store = stockStoreFilter ? findStore(stockStoreFilter) : null;
+
   [...db.products]
     .sort((a, b) => a.name.localeCompare(b.name, "ja"))
     .forEach((p) => {
+      const qty = store ? getStock(p, store.id) : totalStock(p);
+      // 全店表示では、その商品を扱っている店舗数を添える
+      const storeCount = p.stockByStore ? Object.keys(p.stockByStore).length : 0;
+      const sub = store
+        ? (p.category ? `${p.category}・` : "") + formatYen(p.price)
+        : (p.category ? `${p.category}・` : "") + `${formatYen(p.price)}・${storeCount}店舗`;
       list.appendChild(
         buildListItem({
           title: p.name,
-          sub: (p.category ? `${p.category}・` : "") + formatYen(p.price),
-          value: `在庫 ${p.stock}`,
-          low: p.stock <= p.lowStock,
+          sub,
+          value: store ? `在庫 ${qty}` : `合計 ${qty}`,
+          low: store ? qty <= p.lowStock : false,
           onClick: () => openProductForm(p.id),
         })
       );
     });
+}
+
+function renderStockStoreChips() {
+  const row = document.getElementById("stock-store-chips");
+  row.innerHTML = "";
+  if (db.stores.length === 0) {
+    row.hidden = true;
+    return;
+  }
+  row.hidden = false;
+
+  const makeChip = (id, label) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "chip" + (stockStoreFilter === id ? " active" : "");
+    chip.textContent = label;
+    chip.addEventListener("click", () => {
+      stockStoreFilter = id;
+      renderStockList();
+    });
+    row.appendChild(chip);
+  };
+
+  makeChip("", "全店");
+  db.stores.forEach((s) => makeChip(s.id, s.name));
 }
 
 document.getElementById("btn-new-product").addEventListener("click", () => openProductForm(null));
@@ -472,13 +630,14 @@ function openProductForm(id) {
   document.getElementById("product-name").value = product ? product.name : "";
   document.getElementById("product-category").value = product ? product.category || "" : "";
   document.getElementById("product-price").value = product ? product.price : "";
-  document.getElementById("product-stock").value = product ? product.stock : 0;
   document.getElementById("product-low-stock").value = product ? product.lowStock : 5;
   document.getElementById("btn-product-delete").hidden = !product;
+  renderProductStockRows(product);
 
   const restockForm = document.getElementById("restock-form");
   restockForm.closest(".card").style.display = product ? "" : "none";
   if (product) {
+    fillStoreSelect(document.getElementById("restock-store"), stockStoreFilter);
     document.getElementById("restock-date").value = todayStr();
     document.getElementById("restock-qty").value = "";
     document.getElementById("restock-memo").value = "";
@@ -489,6 +648,35 @@ function openProductForm(id) {
   showScreen("product-form", { activeTab: "stock" });
 }
 
+/** 商品フォームの「店舗ごとの在庫数」欄を作る */
+function renderProductStockRows(product) {
+  const container = document.getElementById("product-stock-rows");
+  container.innerHTML = "";
+  if (db.stores.length === 0) {
+    container.innerHTML =
+      `<div class="stock-rows-empty">店舗が未登録です。「設定」タブの「店舗の管理」から追加してください。</div>`;
+    return;
+  }
+  db.stores.forEach((store) => {
+    const row = document.createElement("div");
+    row.className = "stock-row";
+
+    const name = document.createElement("div");
+    name.className = "stock-row-name";
+    name.textContent = store.name;
+    row.appendChild(name);
+
+    const input = document.createElement("input");
+    input.type = "number";
+    input.step = "1";
+    input.dataset.storeId = store.id;
+    input.value = String(product ? getStock(product, store.id) : 0);
+    row.appendChild(input);
+
+    container.appendChild(row);
+  });
+}
+
 document.getElementById("btn-product-cancel").addEventListener("click", () => showScreen("stock"));
 
 document.getElementById("product-form").addEventListener("submit", (e) => {
@@ -497,35 +685,47 @@ document.getElementById("product-form").addEventListener("submit", (e) => {
   const name = document.getElementById("product-name").value.trim();
   const category = document.getElementById("product-category").value.trim();
   const price = Number(document.getElementById("product-price").value);
-  const stock = Number(document.getElementById("product-stock").value);
   const lowStock = Number(document.getElementById("product-low-stock").value);
 
   if (!name) {
     showToast("商品名を入力してください");
     return;
   }
-  if (price < 0 || Number.isNaN(price) || stock < 0 || Number.isNaN(stock)) {
-    showToast("価格・在庫数を正しく入力してください");
+  if (price < 0 || Number.isNaN(price)) {
+    showToast("価格を正しく入力してください");
     return;
   }
 
-  if (id) {
-    const product = findProduct(id);
-    if (product) {
-      product.name = name;
-      product.category = category;
-      product.price = price;
-      product.stock = stock;
-      product.lowStock = lowStock;
-    }
+  // 空欄の店舗は「その店では扱わない」という意味なので、在庫を持たせない
+  const stockByStore = {};
+  let badStock = false;
+  document.querySelectorAll("#product-stock-rows input").forEach((input) => {
+    const raw = input.value.trim();
+    if (raw === "") return;
+    const qty = Number(raw);
+    if (Number.isNaN(qty)) { badStock = true; return; }
+    stockByStore[input.dataset.storeId] = qty;
+  });
+  if (badStock) {
+    showToast("在庫数を正しく入力してください");
+    return;
+  }
+
+  const product = id ? findProduct(id) : null;
+  if (product) {
+    product.name = name;
+    product.category = category;
+    product.price = price;
+    product.lowStock = lowStock;
+    product.stockByStore = stockByStore;
   } else {
     db.products.push({
       id: uid(),
       name,
       category,
       price,
-      stock,
       lowStock,
+      stockByStore,
       createdAt: Date.now(),
     });
   }
@@ -557,6 +757,11 @@ document.getElementById("restock-form").addEventListener("submit", (e) => {
   const id = document.getElementById("product-id").value;
   const product = findProduct(id);
   if (!product) return;
+  const store = findStore(document.getElementById("restock-store").value);
+  if (!store) {
+    showToast("店舗を選択してください");
+    return;
+  }
 
   const type = document.getElementById("restock-type").value;
   const qty = Number(document.getElementById("restock-qty").value);
@@ -569,13 +774,15 @@ document.getElementById("restock-form").addEventListener("submit", (e) => {
   }
 
   if (type === "in") {
-    product.stock += qty;
+    addStock(product, store.id, qty);
   } else {
-    product.stock = qty;
+    setStock(product, store.id, qty);
   }
 
   db.restocks.push({
     id: uid(),
+    storeId: store.id,
+    storeName: store.name,
     productId: product.id,
     productName: product.name,
     type,
@@ -586,7 +793,7 @@ document.getElementById("restock-form").addEventListener("submit", (e) => {
   });
 
   saveDB();
-  document.getElementById("product-stock").value = product.stock;
+  renderProductStockRows(product);
   document.getElementById("restock-qty").value = "";
   document.getElementById("restock-memo").value = "";
   showToast(type === "in" ? "入荷を記録しました" : "棚卸しを記録しました");
@@ -658,22 +865,31 @@ function extractPrices(line) {
   return found;
 }
 
-/** 行に含まれる登録済み商品を探す（最長一致） */
-function findProductInLine(line) {
+/** 行に含まれる登録済みの名前を探す（最長一致） */
+function findByNameInLine(line, list) {
   const key = matchKey(line);
   let best = null;
-  db.products.forEach((p) => {
-    const pk = matchKey(p.name);
-    if (pk && key.includes(pk)) {
-      if (!best || pk.length > matchKey(best.name).length) best = p;
+  list.forEach((item) => {
+    const itemKey = matchKey(item.name);
+    if (itemKey && key.includes(itemKey)) {
+      if (!best || itemKey.length > matchKey(best.name).length) best = item;
     }
   });
   return best;
 }
 
+function findProductInLine(line) {
+  return findByNameInLine(line, db.products);
+}
+
+function findStoreInLine(line) {
+  return findByNameInLine(line, db.stores);
+}
+
 /** 1行を売上候補に変換する。候補にならない行は null */
-function parseSaleLine(line, contextDate) {
+function parseSaleLine(line, contextDate, contextStoreId) {
   const product = findProductInLine(line);
+  const store = findStoreInLine(line);
   const qty = extractQty(line);
   const prices = extractPrices(line);
 
@@ -704,27 +920,34 @@ function parseSaleLine(line, contextDate) {
 
   if (unitPrice === null || Number.isNaN(unitPrice)) unitPrice = 0;
 
+  const storeId = store ? store.id : contextStoreId || "";
+
   return {
     id: uid(),
     source: line,
+    storeId,
     productId: product ? product.id : "",
     qty: finalQty,
     unitPrice,
     date: contextDate,
-    include: Boolean(product),
+    include: Boolean(product && storeId),
   };
 }
 
-function parseChatText(text) {
+function parseChatText(text, defaultStoreId) {
   const lines = normalizeText(text).split(/\r?\n/);
   const rows = [];
   let contextDate = todayStr();
+  let contextStoreId = defaultStoreId || "";
   lines.forEach((rawLine) => {
     const line = rawLine.trim();
     if (!line) return;
     const dateFound = extractDate(line);
     if (dateFound) contextDate = dateFound;
-    const row = parseSaleLine(line, contextDate);
+    // 「8/25 鹿沼店」のような見出し行は、以降の行の店舗として引き継ぐ
+    const storeFound = findStoreInLine(line);
+    if (storeFound) contextStoreId = storeFound.id;
+    const row = parseSaleLine(line, contextDate, contextStoreId);
     if (row) rows.push(row);
   });
   return rows;
@@ -736,6 +959,7 @@ let importRows = [];
 document.getElementById("btn-open-import").addEventListener("click", () => {
   document.getElementById("import-text").value = "";
   document.getElementById("import-result-card").hidden = true;
+  fillStoreSelect(document.getElementById("import-default-store"), "");
   importRows = [];
   showScreen("import");
 });
@@ -752,7 +976,11 @@ document.getElementById("btn-import-parse").addEventListener("click", () => {
     showToast("先に「在庫」タブで商品を登録してください");
     return;
   }
-  importRows = parseChatText(text);
+  if (db.stores.length === 0) {
+    showToast("先に「設定」タブで店舗を登録してください");
+    return;
+  }
+  importRows = parseChatText(text, document.getElementById("import-default-store").value);
   if (importRows.length === 0) {
     document.getElementById("import-result-card").hidden = true;
     showToast("売上らしい行が見つかりませんでした");
@@ -769,7 +997,7 @@ function renderImportRows() {
 
   importRows.forEach((row) => {
     const el = document.createElement("div");
-    el.className = "import-row" + (row.productId ? "" : " unmatched");
+    el.className = "import-row" + (row.productId && row.storeId ? "" : " unmatched");
 
     const head = document.createElement("div");
     head.className = "import-row-head";
@@ -802,6 +1030,29 @@ function renderImportRows() {
 
     const grid = document.createElement("div");
     grid.className = "import-grid";
+
+    // 店舗
+    const storeField = document.createElement("label");
+    storeField.className = "field field-wide";
+    storeField.innerHTML = "<span>店舗</span>";
+    const storeSelect = document.createElement("select");
+    const storeBlank = document.createElement("option");
+    storeBlank.value = "";
+    storeBlank.textContent = "（店舗をえらぶ）";
+    storeSelect.appendChild(storeBlank);
+    db.stores.forEach((s) => {
+      const opt = document.createElement("option");
+      opt.value = s.id;
+      opt.textContent = s.name;
+      if (s.id === row.storeId) opt.selected = true;
+      storeSelect.appendChild(opt);
+    });
+    storeSelect.addEventListener("change", () => {
+      row.storeId = storeSelect.value;
+      renderImportRows();
+    });
+    storeField.appendChild(storeSelect);
+    grid.appendChild(storeField);
 
     // 商品
     const productField = document.createElement("label");
@@ -898,29 +1149,32 @@ function updateRowTotal(el, row) {
 }
 
 function updateImportTotal() {
-  const selected = importRows.filter((r) => r.include && r.productId);
+  const selected = importRows.filter((r) => r.include && r.productId && r.storeId);
   const total = selected.reduce((sum, r) => sum + r.qty * r.unitPrice, 0);
   document.getElementById("import-total").textContent = formatYen(total);
   document.getElementById("import-count").textContent = String(selected.length);
 }
 
 document.getElementById("btn-import-commit").addEventListener("click", () => {
-  const selected = importRows.filter((r) => r.include && r.productId && r.qty > 0);
+  const selected = importRows.filter((r) => r.include && r.productId && r.storeId && r.qty > 0);
   if (selected.length === 0) {
     showToast("登録する行がありません");
     return;
   }
 
-  const skipped = importRows.filter((r) => r.include && !r.productId).length;
+  const skipped = importRows.filter((r) => r.include && (!r.productId || !r.storeId)).length;
   let message = `${selected.length}件の売上を登録します。よろしいですか？`;
-  if (skipped > 0) message += `\n（商品が未選択の${skipped}件はスキップされます）`;
+  if (skipped > 0) message += `\n（店舗または商品が未選択の${skipped}件はスキップされます）`;
   if (!confirm(message)) return;
 
   selected.forEach((row) => {
     const product = findProduct(row.productId);
-    if (!product) return;
+    const store = findStore(row.storeId);
+    if (!product || !store) return;
     db.sales.push({
       id: uid(),
+      storeId: store.id,
+      storeName: store.name,
       productId: product.id,
       productName: product.name,
       qty: row.qty,
@@ -930,7 +1184,7 @@ document.getElementById("btn-import-commit").addEventListener("click", () => {
       memo: "チャットから取込",
       createdAt: Date.now(),
     });
-    product.stock -= row.qty;
+    addStock(product, store.id, -row.qty);
   });
 
   saveDB();
@@ -998,11 +1252,41 @@ document.querySelectorAll("#report-range-chips .chip").forEach((chip) => {
 document.getElementById("report-from").addEventListener("change", renderReport);
 document.getElementById("report-to").addEventListener("change", renderReport);
 
+function renderReportStoreChips() {
+  const row = document.getElementById("report-store-chips");
+  row.innerHTML = "";
+  if (db.stores.length === 0) {
+    row.hidden = true;
+    return;
+  }
+  row.hidden = false;
+
+  const makeChip = (id, label) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "chip" + (reportStoreFilter === id ? " active" : "");
+    chip.textContent = label;
+    chip.addEventListener("click", () => {
+      reportStoreFilter = id;
+      renderReport();
+    });
+    row.appendChild(chip);
+  };
+
+  makeChip("", "全店");
+  db.stores.forEach((s) => makeChip(s.id, s.name));
+}
+
+/** 集計画面で選択中の店舗。空文字なら全店 */
+let reportStoreFilter = "";
+
 function renderReport() {
+  renderReportStoreChips();
   const { from, to } = getRangeDates(currentReportRange);
   const filtered = db.sales.filter((s) => {
     if (from && s.date < from) return false;
     if (to && s.date > to) return false;
+    if (reportStoreFilter && s.storeId !== reportStoreFilter) return false;
     return true;
   });
 
@@ -1021,13 +1305,35 @@ function renderReport() {
   const ranking = [...byProduct.values()].sort((a, b) => b.total - a.total);
   const maxTotal = ranking.length ? ranking[0].total : 0;
 
-  const rankingEl = document.getElementById("report-ranking");
-  rankingEl.innerHTML = "";
-  if (ranking.length === 0) {
-    rankingEl.innerHTML = `<div class="list-empty">この期間の売上はありません</div>`;
+  renderRanking(document.getElementById("report-ranking"), ranking, maxTotal);
+
+  // 店舗別。店舗で絞り込んでいるあいだは1件だけになるので出さない
+  const storeRankingEl = document.getElementById("report-store-ranking");
+  const storeCard = storeRankingEl.closest(".card");
+  if (reportStoreFilter || db.stores.length <= 1) {
+    storeCard.hidden = true;
+  } else {
+    storeCard.hidden = false;
+    const byStore = new Map();
+    filtered.forEach((s) => {
+      const key = s.storeId || "";
+      const entry = byStore.get(key) || { name: s.storeName || "―", qty: 0, total: 0 };
+      entry.qty += s.qty;
+      entry.total += s.total;
+      byStore.set(key, entry);
+    });
+    const storeRanking = [...byStore.values()].sort((a, b) => b.total - a.total);
+    renderRanking(storeRankingEl, storeRanking, storeRanking.length ? storeRanking[0].total : 0);
+  }
+}
+
+function renderRanking(container, entries, maxTotal) {
+  container.innerHTML = "";
+  if (entries.length === 0) {
+    container.innerHTML = `<div class="list-empty">この期間の売上はありません</div>`;
     return;
   }
-  ranking.forEach((entry, i) => {
+  entries.forEach((entry, i) => {
     const row = document.createElement("div");
     row.className = "list-item";
     const pct = maxTotal > 0 ? Math.max(4, Math.round((entry.total / maxTotal) * 100)) : 0;
@@ -1040,7 +1346,7 @@ function renderReport() {
           <div class="rank-bar-track"><div class="rank-bar-fill" style="width:${pct}%"></div></div>
         </div>
       </div>`;
-    rankingEl.appendChild(row);
+    container.appendChild(row);
   });
 }
 
@@ -1062,7 +1368,7 @@ function renderHistory() {
     sortedSales.forEach((s) => {
       salesList.appendChild(
         buildListItem({
-          title: s.productName,
+          title: `${s.storeName || "―"}　${s.productName}`,
           sub: `${s.date}・${s.qty}個${s.memo ? "・" + s.memo : ""}`,
           value: formatYen(s.total),
           onDelete: () => deleteSale(s.id),
@@ -1080,7 +1386,7 @@ function renderHistory() {
     sortedRestocks.forEach((r) => {
       restockList.appendChild(
         buildListItem({
-          title: r.productName,
+          title: `${r.storeName || "―"}　${r.productName}`,
           sub: `${r.date}・${r.type === "in" ? "入荷" : "棚卸し"}${r.memo ? "・" + r.memo : ""}`,
           value: r.type === "in" ? `+${r.qty}` : `→ ${r.qty}`,
           onDelete: () => deleteRestock(r.id),
@@ -1095,7 +1401,7 @@ function deleteSale(id) {
   if (!sale) return;
   if (!confirm("この売上記録を削除しますか？在庫は元の数量に戻ります。")) return;
   const product = findProduct(sale.productId);
-  if (product) product.stock += sale.qty;
+  if (product && sale.storeId) addStock(product, sale.storeId, sale.qty);
   db.sales = db.sales.filter((s) => s.id !== id);
   saveDB();
   showToast("削除しました");
@@ -1110,7 +1416,7 @@ function deleteRestock(id) {
   if (!confirm(msg)) return;
   if (restock.type === "in") {
     const product = findProduct(restock.productId);
-    if (product) product.stock = Math.max(0, product.stock - restock.qty);
+    if (product && restock.storeId) addStock(product, restock.storeId, -restock.qty);
   }
   db.restocks = db.restocks.filter((r) => r.id !== id);
   saveDB();
@@ -1190,20 +1496,17 @@ document.getElementById("import-file").addEventListener("change", (e) => {
       if (!Array.isArray(parsed.products) || !Array.isArray(parsed.sales)) {
         throw new Error("形式が正しくありません");
       }
+      const storeCount = Array.isArray(parsed.stores) ? parsed.stores.length : 0;
       const summary =
-        `商品 ${parsed.products.length}件 / 売上 ${parsed.sales.length}件` +
-        `\n\n今のデータ（商品 ${db.products.length}件 / 売上 ${db.sales.length}件）と置きかえます。` +
+        `店舗 ${storeCount}件 / 商品 ${parsed.products.length}件 / 売上 ${parsed.sales.length}件` +
+        `\n\n今のデータ（店舗 ${db.stores.length}件 / 商品 ${db.products.length}件 / 売上 ${db.sales.length}件）と置きかえます。` +
         `\n置きかえる前の状態は復元ポイントに残ります。よろしいですか？`;
       if (!confirm(summary)) {
         e.target.value = "";
         return;
       }
       takeSnapshot("読み込みの直前");
-      db = {
-        products: parsed.products || [],
-        sales: parsed.sales || [],
-        restocks: Array.isArray(parsed.restocks) ? parsed.restocks : [],
-      };
+      db = normalizeDB(parsed);
       saveDB();
       showToast("データを読み込みました");
       showScreen("home");
@@ -1240,21 +1543,98 @@ function restoreSnapshot(index) {
   if (!confirm(message)) return;
 
   takeSnapshot("復元の直前");
-  db = {
-    products: snap.data.products || [],
-    sales: snap.data.sales || [],
-    restocks: snap.data.restocks || [],
-  };
+  db = normalizeDB(snap.data);
   saveDB();
   showToast("復元しました");
   showScreen("home");
+}
+
+// ---------- 店舗の管理 ----------
+
+document.getElementById("store-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const input = document.getElementById("store-name-input");
+  const name = input.value.trim();
+  if (!name) return;
+  if (db.stores.some((s) => s.name === name)) {
+    showToast("同じ名前の店舗があります");
+    return;
+  }
+  db.stores.push({ id: uid(), name, createdAt: Date.now() });
+  saveDB();
+  input.value = "";
+  showToast("店舗を追加しました");
+  renderStoreList();
+});
+
+function renameStore(id) {
+  const store = findStore(id);
+  if (!store) return;
+  const name = prompt("店舗名を変更", store.name);
+  if (name === null) return;
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  if (db.stores.some((s) => s.id !== id && s.name === trimmed)) {
+    showToast("同じ名前の店舗があります");
+    return;
+  }
+  store.name = trimmed;
+  // 記録側に控えている店舗名も追従させる（履歴の表示に使うため）
+  db.sales.forEach((s) => { if (s.storeId === id) s.storeName = trimmed; });
+  db.restocks.forEach((r) => { if (r.storeId === id) r.storeName = trimmed; });
+  saveDB();
+  showToast("店舗名を変更しました");
+  renderStoreList();
+}
+
+function deleteStore(id) {
+  const store = findStore(id);
+  if (!store) return;
+  const salesCount = db.sales.filter((s) => s.storeId === id).length;
+  const message =
+    `「${store.name}」を削除しますか？\n\n` +
+    `この店舗の在庫数は消えますが、売上の記録${salesCount}件はそのまま残ります。`;
+  if (!confirm(message)) return;
+  db.stores = db.stores.filter((s) => s.id !== id);
+  db.products.forEach((p) => {
+    if (p.stockByStore) delete p.stockByStore[id];
+  });
+  if (stockStoreFilter === id) stockStoreFilter = "";
+  if (reportStoreFilter === id) reportStoreFilter = "";
+  saveDB();
+  showToast("店舗を削除しました");
+  renderStoreList();
+}
+
+function renderStoreList() {
+  const container = document.getElementById("store-list");
+  document.getElementById("store-count").textContent = String(db.stores.length);
+  container.innerHTML = "";
+  if (db.stores.length === 0) {
+    container.innerHTML = `<div class="list-empty">まだ店舗が登録されていません</div>`;
+    return;
+  }
+  db.stores.forEach((store) => {
+    const salesTotal = db.sales
+      .filter((s) => s.storeId === store.id)
+      .reduce((sum, s) => sum + s.total, 0);
+    const row = buildListItem({
+      title: store.name,
+      sub: `売上 ${formatYen(salesTotal)}`,
+      value: "",
+      onClick: () => renameStore(store.id),
+      onDelete: () => deleteStore(store.id),
+    });
+    container.appendChild(row);
+  });
 }
 
 function renderSettings() {
   document.getElementById("btn-share").hidden = !canShareBackup();
 
   document.getElementById("status-records").textContent =
-    `商品 ${db.products.length} / 売上 ${db.sales.length} / 入出庫 ${db.restocks.length}`;
+    `店舗 ${db.stores.length} / 商品 ${db.products.length} / 売上 ${db.sales.length} / 入出庫 ${db.restocks.length}`;
+  renderStoreList();
 
   const meta = loadBackupMeta();
   const lastEl = document.getElementById("status-last-backup");
