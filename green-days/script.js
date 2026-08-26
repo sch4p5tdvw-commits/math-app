@@ -7,6 +7,11 @@
  */
 
 const STORAGE_KEY = "greenDays.v1";
+const SNAPSHOT_KEY = "greenDays.snapshots.v1";
+const BACKUP_META_KEY = "greenDays.backupMeta.v1";
+
+const MAX_SNAPSHOTS = 5;
+const BACKUP_REMINDER_DAYS = 7;
 
 /** @type {{products: Array, sales: Array, restocks: Array}} */
 let db = loadDB();
@@ -52,7 +57,143 @@ function loadDB() {
 }
 
 function saveDB() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+  } catch (e) {
+    // 保存できないまま操作を続けると、記録したつもりのものが消える。
+    // 黙って失敗させず、必ず知らせて書き出しを促す。
+    console.error("保存に失敗しました", e);
+    alert(
+      "データを保存できませんでした。端末の空き容量が足りない可能性があります。\n\n" +
+        "「設定」→「バックアップを送る・保存する」で今のデータを書き出してから、" +
+        "不要な写真やアプリを整理してください。"
+    );
+    return false;
+  }
+  maybeAutoSnapshot();
+  updateBackupBanner();
+  return true;
+}
+
+/** 記録の総件数（バックアップが必要かの判定に使う） */
+function totalRecordCount() {
+  return db.products.length + db.sales.length + db.restocks.length;
+}
+
+// ---------- 復元ポイント（自動スナップショット） ----------
+
+function loadSnapshots() {
+  try {
+    const raw = localStorage.getItem(SNAPSHOT_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.error("復元ポイントの読み込みに失敗しました", e);
+    return [];
+  }
+}
+
+function writeSnapshots(list) {
+  // 容量が足りなければ古いものから捨てて、最低1件は残るよう試みる
+  let attempt = list.slice();
+  while (attempt.length > 0) {
+    try {
+      localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(attempt));
+      return true;
+    } catch (e) {
+      attempt = attempt.slice(0, -1);
+    }
+  }
+  try {
+    localStorage.removeItem(SNAPSHOT_KEY);
+  } catch (e) {
+    /* これ以上できることはない */
+  }
+  return false;
+}
+
+/**
+ * 現在のデータを復元ポイントとして保存する。
+ * 本体データの保存を邪魔しないよう、失敗しても例外は投げない。
+ */
+function takeSnapshot(reason) {
+  if (totalRecordCount() === 0) return;
+  const list = loadSnapshots();
+  list.unshift({
+    at: Date.now(),
+    reason,
+    data: JSON.parse(JSON.stringify(db)),
+  });
+  writeSnapshots(list.slice(0, MAX_SNAPSHOTS));
+}
+
+/** 1日1回、その日の最初の変更時に自動で控えを取る */
+function maybeAutoSnapshot() {
+  if (totalRecordCount() === 0) return;
+  const list = loadSnapshots();
+  const today = todayStr();
+  const hasToday = list.some((s) => s.reason === "自動（毎日）" && toDateStr(new Date(s.at)) === today);
+  if (!hasToday) takeSnapshot("自動（毎日）");
+}
+
+// ---------- バックアップの記録 ----------
+
+function loadBackupMeta() {
+  try {
+    const raw = localStorage.getItem(BACKUP_META_KEY);
+    return raw ? JSON.parse(raw) : { at: null, recordCount: 0 };
+  } catch (e) {
+    return { at: null, recordCount: 0 };
+  }
+}
+
+function markBackedUp() {
+  try {
+    localStorage.setItem(
+      BACKUP_META_KEY,
+      JSON.stringify({ at: Date.now(), recordCount: totalRecordCount() })
+    );
+  } catch (e) {
+    console.warn("バックアップ日時を記録できませんでした", e);
+  }
+  updateBackupBanner();
+  renderSettings();
+}
+
+function daysSince(timestamp) {
+  return Math.floor((Date.now() - timestamp) / 86400000);
+}
+
+/** ホーム上部のバックアップ催促を出すかどうか */
+function updateBackupBanner() {
+  const banner = document.getElementById("backup-banner");
+  if (!banner) return;
+  const meta = loadBackupMeta();
+  const count = totalRecordCount();
+
+  if (count === 0) {
+    banner.hidden = true;
+    return;
+  }
+  // 前回のバックアップ以降に増減がなければ催促しない
+  if (meta.at && meta.recordCount === count) {
+    banner.hidden = true;
+    return;
+  }
+
+  const detail = document.getElementById("backup-banner-detail");
+  if (!meta.at) {
+    banner.hidden = false;
+    detail.textContent = `まだ一度も書き出していません（${count}件の記録）`;
+    return;
+  }
+  const days = daysSince(meta.at);
+  if (days >= BACKUP_REMINDER_DAYS) {
+    banner.hidden = false;
+    detail.textContent = `前回から${days}日、${count - meta.recordCount}件ふえています`;
+    return;
+  }
+  banner.hidden = true;
 }
 
 function findProduct(id) {
@@ -89,6 +230,7 @@ function showScreen(name, opts = {}) {
   if (name === "stock") renderStockList();
   if (name === "report") renderReport();
   if (name === "history") renderHistory();
+  if (name === "settings") renderSettings();
 }
 
 document.querySelectorAll(".tab-btn").forEach((btn) => {
@@ -98,6 +240,7 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
 // ---------- ホーム ----------
 
 function renderHome() {
+  updateBackupBanner();
   const today = todayStr();
   const monthPrefix = today.slice(0, 7); // YYYY-MM
 
@@ -975,20 +1118,66 @@ function deleteRestock(id) {
   renderHistory();
 }
 
-// ---------- 設定（バックアップ／初期化） ----------
+// ---------- 設定（バックアップ／復元／初期化） ----------
 
-document.getElementById("btn-export").addEventListener("click", () => {
-  const blob = new Blob([JSON.stringify(db, null, 2)], { type: "application/json" });
+function backupFilename() {
+  const d = new Date();
+  return `greendays-backup-${toDateStr(d).replaceAll("-", "")}-${pad2(d.getHours())}${pad2(d.getMinutes())}.json`;
+}
+
+function backupJson() {
+  return JSON.stringify(
+    { app: "greenDays", version: 1, exportedAt: new Date().toISOString(), ...db },
+    null,
+    2
+  );
+}
+
+/** iOS では共有シートのほうが確実に保存できるので、使える場合は優先する */
+function canShareBackup() {
+  if (!navigator.canShare || !navigator.share || typeof File === "undefined") return false;
+  try {
+    return navigator.canShare({
+      files: [new File(["{}"], "test.json", { type: "application/json" })],
+    });
+  } catch (e) {
+    return false;
+  }
+}
+
+async function shareBackup() {
+  const file = new File([backupJson()], backupFilename(), { type: "application/json" });
+  try {
+    await navigator.share({ files: [file], title: "グリーンデイズ バックアップ" });
+    markBackedUp();
+    showToast("バックアップを保存しました");
+  } catch (err) {
+    if (err && err.name === "AbortError") return; // ユーザーがキャンセルしただけ
+    console.warn("共有に失敗したためダウンロードに切り替えます", err);
+    downloadBackup();
+  }
+}
+
+function downloadBackup() {
+  const blob = new Blob([backupJson()], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  const stamp = todayStr().replaceAll("-", "");
   a.href = url;
-  a.download = `greendays-backup-${stamp}.json`;
+  a.download = backupFilename();
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  markBackedUp();
   showToast("バックアップを書き出しました");
+}
+
+document.getElementById("btn-share").addEventListener("click", shareBackup);
+document.getElementById("btn-export").addEventListener("click", downloadBackup);
+document.getElementById("btn-banner-backup").addEventListener("click", () => {
+  showScreen("settings");
+  if (canShareBackup()) shareBackup();
+  else downloadBackup();
 });
 
 document.getElementById("import-file").addEventListener("change", (e) => {
@@ -1001,14 +1190,19 @@ document.getElementById("import-file").addEventListener("change", (e) => {
       if (!Array.isArray(parsed.products) || !Array.isArray(parsed.sales)) {
         throw new Error("形式が正しくありません");
       }
-      if (!confirm("読み込んだデータで、今のデータを上書きします。よろしいですか？")) {
+      const summary =
+        `商品 ${parsed.products.length}件 / 売上 ${parsed.sales.length}件` +
+        `\n\n今のデータ（商品 ${db.products.length}件 / 売上 ${db.sales.length}件）と置きかえます。` +
+        `\n置きかえる前の状態は復元ポイントに残ります。よろしいですか？`;
+      if (!confirm(summary)) {
         e.target.value = "";
         return;
       }
+      takeSnapshot("読み込みの直前");
       db = {
         products: parsed.products || [],
         sales: parsed.sales || [],
-        restocks: parsed.restocks || [],
+        restocks: Array.isArray(parsed.restocks) ? parsed.restocks : [],
       };
       saveDB();
       showToast("データを読み込みました");
@@ -1024,13 +1218,149 @@ document.getElementById("import-file").addEventListener("change", (e) => {
 });
 
 document.getElementById("btn-reset").addEventListener("click", () => {
-  if (!confirm("すべてのデータを削除します。この操作は元にもどせません。よろしいですか？")) return;
+  if (!confirm("すべてのデータを削除します。よろしいですか？\n\n（削除の直前の状態は復元ポイントに残ります）")) return;
   if (!confirm("本当に削除してよろしいですか？")) return;
+  takeSnapshot("全削除の直前");
   db = emptyDB();
   saveDB();
   showToast("すべてのデータを削除しました");
   showScreen("home");
 });
+
+function restoreSnapshot(index) {
+  const list = loadSnapshots();
+  const snap = list[index];
+  if (!snap) return;
+  const d = new Date(snap.at);
+  const label = `${toDateStr(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  const message =
+    `${label} の状態に戻します。\n` +
+    `（商品 ${snap.data.products.length}件 / 売上 ${snap.data.sales.length}件）\n\n` +
+    `今のデータは置きかえられますが、戻す直前の状態も復元ポイントに残ります。よろしいですか？`;
+  if (!confirm(message)) return;
+
+  takeSnapshot("復元の直前");
+  db = {
+    products: snap.data.products || [],
+    sales: snap.data.sales || [],
+    restocks: snap.data.restocks || [],
+  };
+  saveDB();
+  showToast("復元しました");
+  showScreen("home");
+}
+
+function renderSettings() {
+  document.getElementById("btn-share").hidden = !canShareBackup();
+
+  document.getElementById("status-records").textContent =
+    `商品 ${db.products.length} / 売上 ${db.sales.length} / 入出庫 ${db.restocks.length}`;
+
+  const meta = loadBackupMeta();
+  const lastEl = document.getElementById("status-last-backup");
+  if (!meta.at) {
+    lastEl.textContent = "まだなし";
+    lastEl.classList.toggle("warn", totalRecordCount() > 0);
+  } else {
+    const days = daysSince(meta.at);
+    const d = new Date(meta.at);
+    lastEl.textContent =
+      days === 0 ? "今日" : days === 1 ? "昨日" : `${toDateStr(d)}（${days}日前）`;
+    lastEl.classList.toggle("warn", days >= BACKUP_REMINDER_DAYS);
+  }
+
+  renderSnapshotList();
+  updatePersistStatus();
+}
+
+function renderSnapshotList() {
+  const list = loadSnapshots();
+  const container = document.getElementById("snapshot-list");
+  document.getElementById("snapshot-count").textContent = String(list.length);
+  container.innerHTML = "";
+
+  if (list.length === 0) {
+    container.innerHTML = `<div class="list-empty">まだ復元ポイントはありません</div>`;
+    return;
+  }
+
+  list.forEach((snap, i) => {
+    const d = new Date(snap.at);
+    const el = document.createElement("div");
+    el.className = "list-item snapshot-item";
+    el.innerHTML = `
+      <div class="snapshot-head">
+        <span class="snapshot-reason">${escapeHtml(snap.reason)}</span>
+        <span class="snapshot-when">${toDateStr(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}</span>
+      </div>
+      <div class="snapshot-counts">商品 ${snap.data.products.length}件 ／ 売上 ${snap.data.sales.length}件</div>`;
+
+    const actions = document.createElement("div");
+    actions.className = "snapshot-actions";
+    const restore = document.createElement("button");
+    restore.type = "button";
+    restore.className = "btn btn-secondary";
+    restore.textContent = "この状態に戻す";
+    restore.addEventListener("click", () => restoreSnapshot(i));
+    actions.appendChild(restore);
+    el.appendChild(actions);
+
+    container.appendChild(el);
+  });
+}
+
+/**
+ * 端末に「消さないでほしい」と申請した状態かを表示する。
+ * これが有効だと、ブラウザが容量確保のために勝手に消すことがなくなる。
+ */
+async function updatePersistStatus() {
+  const el = document.getElementById("status-persist");
+  const hint = document.getElementById("persist-hint");
+  if (!el || !hint) return;
+
+  if (!navigator.storage || !navigator.storage.persisted) {
+    el.textContent = "確認できません";
+    el.classList.add("warn");
+    hint.hidden = false;
+    hint.textContent =
+      "このブラウザでは保護状態を確認できません。こまめな書き出しをおすすめします。";
+    return;
+  }
+
+  let persisted = false;
+  try {
+    persisted = await navigator.storage.persisted();
+  } catch (e) {
+    /* 判定できないときは未保護として扱う */
+  }
+
+  if (persisted) {
+    el.textContent = "保護されています";
+    el.classList.remove("warn");
+    hint.hidden = false;
+    hint.textContent =
+      "端末の空き容量が減っても、このアプリのデータが自動で消されることはありません。" +
+      "ただし手動でブラウザのデータを消した場合や、端末が壊れた場合は失われます。";
+  } else {
+    el.textContent = "保護されていません";
+    el.classList.add("warn");
+    hint.hidden = false;
+    hint.textContent =
+      "ホーム画面に追加して何度か使うと、保護が有効になることがあります。" +
+      "いずれにせよ、定期的な書き出しが一番確実です。";
+  }
+}
+
+/** 起動時に一度だけ、データを消さないよう端末に申請する */
+async function requestPersistentStorage() {
+  if (!navigator.storage || !navigator.storage.persist || !navigator.storage.persisted) return;
+  try {
+    if (await navigator.storage.persisted()) return;
+    await navigator.storage.persist();
+  } catch (e) {
+    console.warn("永続化の申請に失敗しました", e);
+  }
+}
 
 // ---------- 初期化 ----------
 
@@ -1042,4 +1372,5 @@ if ("serviceWorker" in navigator) {
   });
 }
 
+requestPersistentStorage();
 showScreen("home");

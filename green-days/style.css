@@ -197,6 +197,47 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--green-500);
 
 .badge-neutral { background: var(--green-600); }
 
+/* ---- バックアップ関連 ---- */
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff8e1;
+  border: 1px solid #ffe0a3;
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  box-shadow: var(--shadow);
+}
+.banner[hidden] { display: none; }
+.banner-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.banner-text b { font-size: 13.5px; color: #8a5a00; }
+.banner-text span { font-size: 12px; color: var(--ink-soft); }
+.banner .btn { flex-shrink: 0; }
+
+.status-grid { display: flex; flex-direction: column; gap: 8px; }
+.status-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--green-100);
+  border-radius: 8px;
+}
+.status-item span { font-size: 12.5px; color: var(--ink-soft); }
+.status-item b { font-size: 13.5px; color: var(--green-900); text-align: right; }
+.status-item b.warn { color: #b26a00; }
+
+#persist-hint { margin-top: 10px; margin-bottom: 0; }
+
+.snapshot-item { flex-direction: column; align-items: stretch; gap: 8px; }
+.snapshot-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.snapshot-reason { font-size: 13px; font-weight: 700; color: var(--ink); }
+.snapshot-when { font-size: 11.5px; color: var(--ink-soft); white-space: nowrap; }
+.snapshot-counts { font-size: 12px; color: var(--ink-soft); }
+.snapshot-actions { display: flex; gap: 8px; }
+.snapshot-actions .btn { flex: 1; padding: 8px 10px; font-size: 13px; }
+
 /* ---- チャット取込 ---- */
 .howto {
   background: var(--green-100);

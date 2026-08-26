@@ -30,6 +30,13 @@
 
     <!-- ホーム -->
     <section id="screen-home" class="screen">
+      <div id="backup-banner" class="banner" hidden>
+        <div class="banner-text">
+          <b>バックアップをおすすめします</b>
+          <span id="backup-banner-detail"></span>
+        </div>
+        <button type="button" id="btn-banner-backup" class="btn btn-primary btn-compact">今すぐ</button>
+      </div>
       <div class="card summary-card">
         <h2>今日の売上</h2>
         <div class="big-number" id="home-today-total">¥0</div>
@@ -267,23 +274,64 @@
     <!-- 設定 -->
     <section id="screen-settings" class="screen" hidden>
       <div class="card">
-        <h2>データのバックアップ</h2>
+        <h2>データの状態</h2>
+        <div class="status-grid">
+          <div class="status-item">
+            <span>記録件数</span>
+            <b id="status-records">0</b>
+          </div>
+          <div class="status-item">
+            <span>最終バックアップ</span>
+            <b id="status-last-backup">まだなし</b>
+          </div>
+          <div class="status-item">
+            <span>保存の安全性</span>
+            <b id="status-persist">確認中…</b>
+          </div>
+        </div>
+        <p id="persist-hint" class="note" hidden></p>
+      </div>
+
+      <div class="card">
+        <h2>バックアップ（書き出し）</h2>
         <p class="note">
           このアプリのデータは、この端末のブラウザ内にのみ保存されています。
-          サーバーには送信されません。ブラウザのデータを消去すると失われるため、
-          こまめにバックアップ（書き出し）をおすすめします。
+          ブラウザのデータを消去したり、端末が壊れたりすると失われるため、
+          こまめな書き出しをおすすめします。保存先はあなたが選びます。
         </p>
         <div class="form-actions">
-          <button type="button" id="btn-export" class="btn btn-primary">データを書き出す（JSON）</button>
-          <label class="btn btn-secondary file-btn">
-            データを読み込む（JSON）
-            <input type="file" id="import-file" accept="application/json" hidden>
-          </label>
+          <button type="button" id="btn-share" class="btn btn-primary" hidden>バックアップを送る・保存する</button>
+          <button type="button" id="btn-export" class="btn btn-secondary">ファイルとしてダウンロード</button>
         </div>
       </div>
+
+      <div class="card">
+        <h2>バックアップから復元</h2>
+        <p class="note">
+          書き出したファイルを読み込むと、今のデータと置きかえます。
+          置きかえる前の状態は、下の「復元ポイント」に自動で残ります。
+        </p>
+        <label class="btn btn-secondary file-btn">
+          バックアップファイルを読み込む
+          <input type="file" id="import-file" accept="application/json,.json" hidden>
+        </label>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>復元ポイント（自動）</h2>
+          <span class="badge badge-neutral" id="snapshot-count">0</span>
+        </div>
+        <p class="note">
+          大きな変更の前と、1日1回、この端末の中に自動で控えを取っています。
+          操作をまちがえたときは、ここから戻せます。
+        </p>
+        <div id="snapshot-list" class="list"></div>
+      </div>
+
       <div class="card">
         <h2>データの初期化</h2>
-        <p class="note">すべての商品・売上・在庫の記録を削除します。元にはもどせません。</p>
+        <p class="note">すべての商品・売上・在庫の記録を削除します。削除の直前の状態は復元ポイントに残ります。</p>
         <button type="button" id="btn-reset" class="btn btn-danger">すべてのデータを削除する</button>
       </div>
     </section>
