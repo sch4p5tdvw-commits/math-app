@@ -70,14 +70,15 @@ function showToast(msg) {
 
 // ---------- 画面切り替え ----------
 
-const SCREENS = ["home", "sale", "stock", "report", "history", "settings", "product-form"];
+const SCREENS = ["home", "sale", "stock", "report", "history", "settings", "product-form", "import"];
 
 function showScreen(name, opts = {}) {
   SCREENS.forEach((s) => {
     const el = document.getElementById(`screen-${s}`);
     if (el) el.hidden = s !== name;
   });
-  const activeTab = opts.activeTab || (SCREENS.includes(name) && name !== "product-form" ? name : null);
+  const SUB_SCREEN_TABS = { "product-form": "stock", import: "sale" };
+  const activeTab = opts.activeTab || SUB_SCREEN_TABS[name] || name;
   document.querySelectorAll(".tab-btn").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.screen === activeTab);
   });
@@ -446,6 +447,355 @@ document.getElementById("restock-form").addEventListener("submit", (e) => {
   document.getElementById("restock-qty").value = "";
   document.getElementById("restock-memo").value = "";
   showToast(type === "in" ? "入荷を記録しました" : "棚卸しを記録しました");
+});
+
+// ---------- チャット・スクショからの取込 ----------
+//
+// 画像の文字認識は端末（iOSの「テキスト認識表示」など）の機能で行ってもらい、
+// このアプリは貼り付けられたテキストを解析するだけ。よって画像もテキストも
+// 外部には一切送信されない。
+
+/** 全角数字・全角英字・全角スペースを半角へそろえる */
+function normalizeText(str) {
+  return String(str)
+    .replace(/[０-９Ａ-Ｚａ-ｚ]/g, (c) =>
+      String.fromCharCode(c.charCodeAt(0) - 0xfee0)
+    )
+    .replace(/　/g, " ");
+}
+
+/** 商品名の照合用キー（空白・記号を落として小文字化） */
+function matchKey(str) {
+  return normalizeText(str).toLowerCase().replace(/[\s・･,，、.。'"’”「」()（）]/g, "");
+}
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+/** 行から日付を取り出す。見つからなければ null */
+function extractDate(line) {
+  let m = line.match(/(\d{4})\s*[/\-年]\s*(\d{1,2})\s*[/\-月]\s*(\d{1,2})\s*日?/);
+  if (m) {
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) return `${m[1]}-${pad2(mo)}-${pad2(d)}`;
+  }
+  m = line.match(/(?:^|[^\d/\-:])(\d{1,2})\s*[/月]\s*(\d{1,2})\s*日?(?![\d/:])/);
+  if (m) {
+    const mo = Number(m[1]);
+    const d = Number(m[2]);
+    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+      return `${new Date().getFullYear()}-${pad2(mo)}-${pad2(d)}`;
+    }
+  }
+  return null;
+}
+
+const QTY_UNITS = "個|コ|こ|点|本|袋|パック|枚|箱|束|杯|皿|人前|セット|ケース|pcs|pc";
+
+/** 行から数量を取り出す。見つからなければ null */
+function extractQty(line) {
+  let m = line.match(new RegExp(`(\\d+)\\s*(?:${QTY_UNITS})`));
+  if (m) return Number(m[1]);
+  m = line.match(/[×xX*]\s*(\d+)/);
+  if (m) return Number(m[1]);
+  return null;
+}
+
+/** 行から金額を取り出す。[{ value, isUnit }] の配列を返す */
+function extractPrices(line) {
+  const found = [];
+  const re = /(@|単価)?\s*(?:[¥￥]\s*(\d[\d,]*)|(\d[\d,]*)\s*円)/g;
+  let m;
+  while ((m = re.exec(line)) !== null) {
+    const value = Number((m[2] || m[3]).replace(/,/g, ""));
+    if (!Number.isNaN(value)) found.push({ value, isUnit: Boolean(m[1]) });
+  }
+  return found;
+}
+
+/** 行に含まれる登録済み商品を探す（最長一致） */
+function findProductInLine(line) {
+  const key = matchKey(line);
+  let best = null;
+  db.products.forEach((p) => {
+    const pk = matchKey(p.name);
+    if (pk && key.includes(pk)) {
+      if (!best || pk.length > matchKey(best.name).length) best = p;
+    }
+  });
+  return best;
+}
+
+/** 1行を売上候補に変換する。候補にならない行は null */
+function parseSaleLine(line, contextDate) {
+  const product = findProductInLine(line);
+  const qty = extractQty(line);
+  const prices = extractPrices(line);
+
+  // 商品も見つからず、数量と金額の両方がそろってもいない行は売上ではないと判断
+  if (!product && !(qty !== null && prices.length > 0)) return null;
+
+  const finalQty = qty !== null && qty > 0 ? qty : 1;
+  let unitPrice = null;
+
+  const explicitUnit = prices.find((p) => p.isUnit);
+  if (explicitUnit) {
+    unitPrice = explicitUnit.value;
+  } else if (prices.length >= 2) {
+    // 「@150 450円」のように単価と合計が並ぶケース
+    unitPrice = Math.min(prices[0].value, prices[1].value);
+  } else if (prices.length === 1) {
+    const price = prices[0].value;
+    if (product && price === product.price) {
+      unitPrice = price; // 登録単価とぴったり一致
+    } else if (finalQty > 1 && price % finalQty === 0) {
+      unitPrice = price / finalQty; // 合計とみなして割り戻す
+    } else {
+      unitPrice = price;
+    }
+  } else if (product) {
+    unitPrice = product.price; // 金額の記載なし → 登録単価を使う
+  }
+
+  if (unitPrice === null || Number.isNaN(unitPrice)) unitPrice = 0;
+
+  return {
+    id: uid(),
+    source: line,
+    productId: product ? product.id : "",
+    qty: finalQty,
+    unitPrice,
+    date: contextDate,
+    include: Boolean(product),
+  };
+}
+
+function parseChatText(text) {
+  const lines = normalizeText(text).split(/\r?\n/);
+  const rows = [];
+  let contextDate = todayStr();
+  lines.forEach((rawLine) => {
+    const line = rawLine.trim();
+    if (!line) return;
+    const dateFound = extractDate(line);
+    if (dateFound) contextDate = dateFound;
+    const row = parseSaleLine(line, contextDate);
+    if (row) rows.push(row);
+  });
+  return rows;
+}
+
+/** @type {Array} 取込プレビューの現在の内容 */
+let importRows = [];
+
+document.getElementById("btn-open-import").addEventListener("click", () => {
+  document.getElementById("import-text").value = "";
+  document.getElementById("import-result-card").hidden = true;
+  importRows = [];
+  showScreen("import");
+});
+
+document.getElementById("btn-import-back").addEventListener("click", () => showScreen("sale"));
+
+document.getElementById("btn-import-parse").addEventListener("click", () => {
+  const text = document.getElementById("import-text").value;
+  if (!text.trim()) {
+    showToast("文章を貼り付けてください");
+    return;
+  }
+  if (db.products.length === 0) {
+    showToast("先に「在庫」タブで商品を登録してください");
+    return;
+  }
+  importRows = parseChatText(text);
+  if (importRows.length === 0) {
+    document.getElementById("import-result-card").hidden = true;
+    showToast("売上らしい行が見つかりませんでした");
+    return;
+  }
+  document.getElementById("import-result-card").hidden = false;
+  renderImportRows();
+  showToast(`${importRows.length}件の候補が見つかりました`);
+});
+
+function renderImportRows() {
+  const container = document.getElementById("import-rows");
+  container.innerHTML = "";
+
+  importRows.forEach((row) => {
+    const el = document.createElement("div");
+    el.className = "import-row" + (row.productId ? "" : " unmatched");
+
+    const head = document.createElement("div");
+    head.className = "import-row-head";
+
+    const check = document.createElement("input");
+    check.type = "checkbox";
+    check.checked = row.include;
+    check.addEventListener("change", () => {
+      row.include = check.checked;
+      updateImportTotal();
+    });
+    head.appendChild(check);
+
+    const src = document.createElement("div");
+    src.className = "import-src";
+    src.textContent = row.source;
+    head.appendChild(src);
+
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "import-del";
+    del.textContent = "除外";
+    del.addEventListener("click", () => {
+      importRows = importRows.filter((r) => r.id !== row.id);
+      renderImportRows();
+    });
+    head.appendChild(del);
+
+    el.appendChild(head);
+
+    const grid = document.createElement("div");
+    grid.className = "import-grid";
+
+    // 商品
+    const productField = document.createElement("label");
+    productField.className = "field field-wide";
+    productField.innerHTML = "<span>商品</span>";
+    const select = document.createElement("select");
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = "（商品をえらぶ）";
+    select.appendChild(blank);
+    db.products.forEach((p) => {
+      const opt = document.createElement("option");
+      opt.value = p.id;
+      opt.textContent = p.name;
+      if (p.id === row.productId) opt.selected = true;
+      select.appendChild(opt);
+    });
+    select.addEventListener("change", () => {
+      row.productId = select.value;
+      const product = findProduct(select.value);
+      if (product && !row.unitPriceEdited) {
+        row.unitPrice = product.price;
+      }
+      renderImportRows();
+      updateImportTotal();
+    });
+    productField.appendChild(select);
+    grid.appendChild(productField);
+
+    // 数量
+    const qtyField = document.createElement("label");
+    qtyField.className = "field";
+    qtyField.innerHTML = "<span>数量</span>";
+    const qtyInput = document.createElement("input");
+    qtyInput.type = "number";
+    qtyInput.min = "1";
+    qtyInput.step = "1";
+    qtyInput.value = String(row.qty);
+    qtyInput.addEventListener("input", () => {
+      row.qty = Number(qtyInput.value) || 0;
+      updateRowTotal(el, row);
+      updateImportTotal();
+    });
+    qtyField.appendChild(qtyInput);
+    grid.appendChild(qtyField);
+
+    // 単価
+    const priceField = document.createElement("label");
+    priceField.className = "field";
+    priceField.innerHTML = "<span>単価（円）</span>";
+    const priceInput = document.createElement("input");
+    priceInput.type = "number";
+    priceInput.min = "0";
+    priceInput.step = "1";
+    priceInput.value = String(row.unitPrice);
+    priceInput.addEventListener("input", () => {
+      row.unitPrice = Number(priceInput.value) || 0;
+      row.unitPriceEdited = true;
+      updateRowTotal(el, row);
+      updateImportTotal();
+    });
+    priceField.appendChild(priceInput);
+    grid.appendChild(priceField);
+
+    // 日付
+    const dateField = document.createElement("label");
+    dateField.className = "field field-wide";
+    dateField.innerHTML = "<span>日付</span>";
+    const dateInput = document.createElement("input");
+    dateInput.type = "date";
+    dateInput.value = row.date;
+    dateInput.addEventListener("change", () => {
+      row.date = dateInput.value || todayStr();
+    });
+    dateField.appendChild(dateInput);
+    grid.appendChild(dateField);
+
+    el.appendChild(grid);
+
+    const total = document.createElement("div");
+    total.className = "import-row-total";
+    el.appendChild(total);
+
+    container.appendChild(el);
+    updateRowTotal(el, row);
+  });
+
+  updateImportTotal();
+}
+
+function updateRowTotal(el, row) {
+  const totalEl = el.querySelector(".import-row-total");
+  if (totalEl) totalEl.textContent = `小計 ${formatYen(row.qty * row.unitPrice)}`;
+}
+
+function updateImportTotal() {
+  const selected = importRows.filter((r) => r.include && r.productId);
+  const total = selected.reduce((sum, r) => sum + r.qty * r.unitPrice, 0);
+  document.getElementById("import-total").textContent = formatYen(total);
+  document.getElementById("import-count").textContent = String(selected.length);
+}
+
+document.getElementById("btn-import-commit").addEventListener("click", () => {
+  const selected = importRows.filter((r) => r.include && r.productId && r.qty > 0);
+  if (selected.length === 0) {
+    showToast("登録する行がありません");
+    return;
+  }
+
+  const skipped = importRows.filter((r) => r.include && !r.productId).length;
+  let message = `${selected.length}件の売上を登録します。よろしいですか？`;
+  if (skipped > 0) message += `\n（商品が未選択の${skipped}件はスキップされます）`;
+  if (!confirm(message)) return;
+
+  selected.forEach((row) => {
+    const product = findProduct(row.productId);
+    if (!product) return;
+    db.sales.push({
+      id: uid(),
+      productId: product.id,
+      productName: product.name,
+      qty: row.qty,
+      unitPrice: row.unitPrice,
+      total: row.qty * row.unitPrice,
+      date: row.date,
+      memo: "チャットから取込",
+      createdAt: Date.now(),
+    });
+    product.stock -= row.qty;
+  });
+
+  saveDB();
+  importRows = [];
+  document.getElementById("import-text").value = "";
+  document.getElementById("import-result-card").hidden = true;
+  showToast(`${selected.length}件を登録しました`);
+  showScreen("home");
 });
 
 // ---------- 集計 ----------

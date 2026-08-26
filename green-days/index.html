@@ -90,6 +90,53 @@
           <button type="submit" class="btn btn-primary">売上を記録する</button>
         </form>
       </div>
+      <div class="card">
+        <h2>チャット・スクショからまとめて取込</h2>
+        <p class="note">
+          LINEなどのやりとりや、スクリーンショットから読み取った文章を貼り付けると、
+          売上をまとめて登録できます。
+        </p>
+        <button type="button" id="btn-open-import" class="btn btn-secondary">まとめて取込をひらく</button>
+      </div>
+    </section>
+
+    <!-- チャット取込 -->
+    <section id="screen-import" class="screen" hidden>
+      <div class="card">
+        <h2>チャット・スクショから取込</h2>
+        <details class="howto">
+          <summary>スクリーンショットから取り込む方法</summary>
+          <ol class="howto-list">
+            <li><b>iPhone</b>：写真アプリでスクショを開き、右下の「テキスト認識表示」アイコンをタップ → 文字を長押しして「すべてを選択」→「コピー」</li>
+            <li><b>Android</b>：Googleフォトで画像を開き「レンズ」をタップ → 文字を選択して「コピー」</li>
+            <li>チャットの文字は、そのままコピーしてもOKです</li>
+            <li>コピーできたら下の欄に貼り付けて「解析する」をタップ</li>
+          </ol>
+          <p class="note">
+            ※ 文字の読み取りはスマホ本体の機能で行われます。このアプリが画像や文章を外部へ送ることはありません。
+          </p>
+        </details>
+        <textarea id="import-text" class="import-textarea" rows="8" placeholder="ここにチャットの文章を貼り付け
+
+例：
+8/25
+りんご 3個 450円
+トマト×2 ¥600"></textarea>
+        <div class="form-actions">
+          <button type="button" id="btn-import-parse" class="btn btn-primary">解析する</button>
+          <button type="button" id="btn-import-back" class="btn btn-secondary">もどる</button>
+        </div>
+      </div>
+      <div class="card" id="import-result-card" hidden>
+        <div class="card-head">
+          <h2>取込プレビュー</h2>
+          <span class="badge badge-neutral" id="import-count">0</span>
+        </div>
+        <p class="note">内容を確認・修正してから登録してください。チェックを外した行は登録されません。</p>
+        <div id="import-rows" class="import-rows"></div>
+        <div class="sale-total-preview">登録合計: <strong id="import-total">¥0</strong></div>
+        <button type="button" id="btn-import-commit" class="btn btn-primary">チェックした売上を登録する</button>
+      </div>
     </section>
 
     <!-- 在庫管理 -->
