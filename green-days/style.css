@@ -230,6 +230,15 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--green-500);
 
 #persist-hint { margin-top: 10px; margin-bottom: 0; }
 
+.warn-note {
+  background: #fff8e1;
+  border: 1px solid #ffe0a3;
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: #8a5a00;
+}
+.warn-note b { color: #7a4f00; }
+
 .snapshot-item { flex-direction: column; align-items: stretch; gap: 8px; }
 .snapshot-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .snapshot-reason { font-size: 13px; font-weight: 700; color: var(--ink); }
