@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>グリーンデイズ 売上・在庫管理</title>
+<meta name="description" content="グリーンデイズの売上集計と在庫管理を、すべて端末内だけで行うアプリ">
+<meta name="theme-color" content="#2e7d32">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="グリーンデイズ">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app">
+  <header class="topbar">
+    <div class="topbar-title">
+      <span class="logo-dot" aria-hidden="true"></span>
+      <h1>グリーンデイズ</h1>
+    </div>
+    <p class="privacy-note">🔒 データは この端末（ブラウザ）の中だけに保存されます。外部には一切送信されません。</p>
+  </header>
+
+  <main class="content">
+
+    <!-- ホーム -->
+    <section id="screen-home" class="screen">
+      <div class="card summary-card">
+        <h2>今日の売上</h2>
+        <div class="big-number" id="home-today-total">¥0</div>
+        <div class="sub-line" id="home-today-count">0件</div>
+      </div>
+      <div class="card-row">
+        <div class="card stat-card">
+          <div class="stat-label">今月の売上</div>
+          <div class="stat-value" id="home-month-total">¥0</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-label">今月の販売数</div>
+          <div class="stat-value" id="home-month-qty">0</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h2>在庫アラート</h2>
+          <span class="badge" id="home-low-stock-badge">0</span>
+        </div>
+        <div id="home-low-stock-list" class="list"></div>
+      </div>
+      <div class="card">
+        <h2>最近の売上</h2>
+        <div id="home-recent-sales" class="list"></div>
+      </div>
+    </section>
+
+    <!-- 売上入力 -->
+    <section id="screen-sale" class="screen" hidden>
+      <div class="card">
+        <h2>売上を記録する</h2>
+        <form id="sale-form" class="form" autocomplete="off">
+          <label class="field">
+            <span>商品</span>
+            <select id="sale-product" required></select>
+          </label>
+          <div class="field-row">
+            <label class="field">
+              <span>数量</span>
+              <input type="number" id="sale-qty" min="1" step="1" value="1" required>
+            </label>
+            <label class="field">
+              <span>単価（円）</span>
+              <input type="number" id="sale-price" min="0" step="1" required>
+            </label>
+          </div>
+          <label class="field">
+            <span>日付</span>
+            <input type="date" id="sale-date" required>
+          </label>
+          <label class="field">
+            <span>メモ（任意）</span>
+            <input type="text" id="sale-memo" maxlength="60" placeholder="例：常連さん">
+          </label>
+          <div class="sale-total-preview">合計: <strong id="sale-total-preview">¥0</strong></div>
+          <div id="sale-stock-warning" class="warning" hidden></div>
+          <button type="submit" class="btn btn-primary">売上を記録する</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- 在庫管理 -->
+    <section id="screen-stock" class="screen" hidden>
+      <div class="card">
+        <div class="card-head">
+          <h2>商品・在庫一覧</h2>
+          <button type="button" id="btn-new-product" class="btn btn-secondary btn-compact">＋ 商品追加</button>
+        </div>
+        <div id="product-list" class="list"></div>
+      </div>
+    </section>
+
+    <!-- 商品フォーム（追加・編集） -->
+    <section id="screen-product-form" class="screen" hidden>
+      <div class="card">
+        <h2 id="product-form-title">商品を追加</h2>
+        <form id="product-form" class="form" autocomplete="off">
+          <input type="hidden" id="product-id">
+          <label class="field">
+            <span>商品名</span>
+            <input type="text" id="product-name" maxlength="30" required>
+          </label>
+          <label class="field">
+            <span>カテゴリ（任意）</span>
+            <input type="text" id="product-category" maxlength="20" placeholder="例：野菜">
+          </label>
+          <div class="field-row">
+            <label class="field">
+              <span>販売価格（円）</span>
+              <input type="number" id="product-price" min="0" step="1" required>
+            </label>
+            <label class="field">
+              <span>在庫数</span>
+              <input type="number" id="product-stock" min="0" step="1" value="0" required>
+            </label>
+          </div>
+          <label class="field">
+            <span>在庫少アラートのしきい値</span>
+            <input type="number" id="product-low-stock" min="0" step="1" value="5" required>
+          </label>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">保存する</button>
+            <button type="button" id="btn-product-delete" class="btn btn-danger" hidden>この商品を削除</button>
+            <button type="button" id="btn-product-cancel" class="btn btn-secondary">もどる</button>
+          </div>
+        </form>
+      </div>
+      <div class="card">
+        <h2>入荷・棚卸し</h2>
+        <form id="restock-form" class="form" autocomplete="off">
+          <div class="field-row">
+            <label class="field">
+              <span>種類</span>
+              <select id="restock-type">
+                <option value="in">入荷（在庫を増やす）</option>
+                <option value="adjust">棚卸し（在庫数を直接指定）</option>
+              </select>
+            </label>
+            <label class="field">
+              <span id="restock-qty-label">数量</span>
+              <input type="number" id="restock-qty" min="0" step="1" required>
+            </label>
+          </div>
+          <label class="field">
+            <span>日付</span>
+            <input type="date" id="restock-date" required>
+          </label>
+          <label class="field">
+            <span>メモ（任意）</span>
+            <input type="text" id="restock-memo" maxlength="60" placeholder="例：仕入れ先A">
+          </label>
+          <button type="submit" class="btn btn-secondary">記録する</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- 集計 -->
+    <section id="screen-report" class="screen" hidden>
+      <div class="card">
+        <h2>売上集計</h2>
+        <div class="chiprow" id="report-range-chips">
+          <button type="button" class="chip active" data-range="today">今日</button>
+          <button type="button" class="chip" data-range="week">今週</button>
+          <button type="button" class="chip" data-range="month">今月</button>
+          <button type="button" class="chip" data-range="all">すべて</button>
+          <button type="button" class="chip" data-range="custom">期間指定</button>
+        </div>
+        <div id="report-custom-range" class="field-row" hidden>
+          <label class="field">
+            <span>開始日</span>
+            <input type="date" id="report-from">
+          </label>
+          <label class="field">
+            <span>終了日</span>
+            <input type="date" id="report-to">
+          </label>
+        </div>
+      </div>
+      <div class="card-row">
+        <div class="card stat-card">
+          <div class="stat-label">合計売上</div>
+          <div class="stat-value" id="report-total">¥0</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-label">合計販売数</div>
+          <div class="stat-value" id="report-qty">0</div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>商品別ランキング</h2>
+        <div id="report-ranking" class="list"></div>
+      </div>
+    </section>
+
+    <!-- 履歴 -->
+    <section id="screen-history" class="screen" hidden>
+      <div class="card">
+        <h2>売上履歴</h2>
+        <div id="history-sales-list" class="list"></div>
+      </div>
+      <div class="card">
+        <h2>入荷・棚卸し履歴</h2>
+        <div id="history-restock-list" class="list"></div>
+      </div>
+    </section>
+
+    <!-- 設定 -->
+    <section id="screen-settings" class="screen" hidden>
+      <div class="card">
+        <h2>データのバックアップ</h2>
+        <p class="note">
+          このアプリのデータは、この端末のブラウザ内にのみ保存されています。
+          サーバーには送信されません。ブラウザのデータを消去すると失われるため、
+          こまめにバックアップ（書き出し）をおすすめします。
+        </p>
+        <div class="form-actions">
+          <button type="button" id="btn-export" class="btn btn-primary">データを書き出す（JSON）</button>
+          <label class="btn btn-secondary file-btn">
+            データを読み込む（JSON）
+            <input type="file" id="import-file" accept="application/json" hidden>
+          </label>
+        </div>
+      </div>
+      <div class="card">
+        <h2>データの初期化</h2>
+        <p class="note">すべての商品・売上・在庫の記録を削除します。元にはもどせません。</p>
+        <button type="button" id="btn-reset" class="btn btn-danger">すべてのデータを削除する</button>
+      </div>
+    </section>
+
+  </main>
+
+  <nav class="tabbar">
+    <button type="button" class="tab-btn active" data-screen="home">
+      <span class="tab-icon">🏠</span><span>ホーム</span>
+    </button>
+    <button type="button" class="tab-btn" data-screen="sale">
+      <span class="tab-icon">🧾</span><span>売上</span>
+    </button>
+    <button type="button" class="tab-btn" data-screen="stock">
+      <span class="tab-icon">📦</span><span>在庫</span>
+    </button>
+    <button type="button" class="tab-btn" data-screen="report">
+      <span class="tab-icon">📊</span><span>集計</span>
+    </button>
+    <button type="button" class="tab-btn" data-screen="history">
+      <span class="tab-icon">🕘</span><span>履歴</span>
+    </button>
+    <button type="button" class="tab-btn" data-screen="settings">
+      <span class="tab-icon">⚙️</span><span>設定</span>
+    </button>
+  </nav>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="script.js"></script>
+</body>
+</html>
