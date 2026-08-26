@@ -1271,6 +1271,7 @@ function renderSettings() {
 
   renderSnapshotList();
   updatePersistStatus();
+  renderLockSettings();
 }
 
 function renderSnapshotList() {
@@ -1362,6 +1363,236 @@ async function requestPersistentStorage() {
   }
 }
 
+// ---------- アプリのロック（顔認証・指紋） ----------
+//
+// WebAuthn の「プラットフォーム認証器」を使う。端末が顔・指紋の確認をした
+// という事実だけを利用するもので、データ自体を暗号化するわけではない。
+// つまり、のぞき見は防げるが、端末を解析されるところまでは守れない。
+//
+// 設定は db とは別のキーに置く。バックアップに混ざると、パスキーの無い
+// 別の端末で読み込んだときに開けなくなるため。
+
+const LOCK_KEY = "greenDays.lock.v1";
+
+let lockConfig = loadLockConfig();
+let isLocked = false;
+let lastHiddenAt = null;
+
+function loadLockConfig() {
+  try {
+    const raw = localStorage.getItem(LOCK_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (!parsed || !parsed.credentialId) return { enabled: false, credentialId: null, graceSeconds: 60 };
+    return {
+      enabled: Boolean(parsed.enabled),
+      credentialId: parsed.credentialId,
+      graceSeconds: Number.isFinite(parsed.graceSeconds) ? parsed.graceSeconds : 60,
+    };
+  } catch (e) {
+    return { enabled: false, credentialId: null, graceSeconds: 60 };
+  }
+}
+
+function saveLockConfig() {
+  try {
+    localStorage.setItem(LOCK_KEY, JSON.stringify(lockConfig));
+  } catch (e) {
+    console.warn("ロック設定を保存できませんでした", e);
+  }
+}
+
+function randomBytes(length) {
+  return crypto.getRandomValues(new Uint8Array(length));
+}
+
+function bufToBase64url(buf) {
+  let binary = "";
+  new Uint8Array(buf).forEach((b) => { binary += String.fromCharCode(b); });
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function base64urlToBuf(str) {
+  const padded = str.replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(padded + "=".repeat((4 - (padded.length % 4)) % 4));
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+  return out;
+}
+
+async function biometricsAvailable() {
+  if (!window.PublicKeyCredential || !navigator.credentials) return false;
+  if (!window.isSecureContext) return false;
+  try {
+    return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+  } catch (e) {
+    return false;
+  }
+}
+
+async function registerLock() {
+  const credential = await navigator.credentials.create({
+    publicKey: {
+      challenge: randomBytes(32),
+      // rp.id は指定しない。省略すると現在のドメインが使われ、
+      // github.io のような共有ドメインでも正しく登録できる。
+      rp: { name: "グリーンデイズ" },
+      user: {
+        id: randomBytes(16),
+        name: "owner",
+        displayName: "オーナー",
+      },
+      pubKeyCredParams: [
+        { type: "public-key", alg: -7 },
+        { type: "public-key", alg: -257 },
+      ],
+      authenticatorSelection: {
+        authenticatorAttachment: "platform",
+        userVerification: "required",
+        residentKey: "preferred",
+      },
+      timeout: 60000,
+    },
+  });
+  if (!credential) throw new Error("登録できませんでした");
+  return bufToBase64url(credential.rawId);
+}
+
+async function verifyLock() {
+  const assertion = await navigator.credentials.get({
+    publicKey: {
+      challenge: randomBytes(32),
+      allowCredentials: lockConfig.credentialId
+        ? [{ type: "public-key", id: base64urlToBuf(lockConfig.credentialId) }]
+        : [],
+      userVerification: "required",
+      timeout: 60000,
+    },
+  });
+  return Boolean(assertion);
+}
+
+function engageLock() {
+  if (!lockConfig.enabled) return;
+  isLocked = true;
+  document.documentElement.classList.add("app-locked");
+  document.getElementById("lock-message").textContent = "ロックを解除してください";
+  document.getElementById("lock-screen").hidden = false;
+}
+
+function releaseLock() {
+  isLocked = false;
+  document.documentElement.classList.remove("app-locked");
+  document.getElementById("lock-screen").hidden = true;
+}
+
+/**
+ * @param {boolean} silent 自動で試みた場合は、失敗しても文言を変えない
+ *   （ユーザー操作なしの認証はブラウザに拒否されることがあるため）
+ */
+async function attemptUnlock(silent) {
+  const message = document.getElementById("lock-message");
+  try {
+    if (await verifyLock()) {
+      releaseLock();
+      return true;
+    }
+    if (!silent) message.textContent = "解除できませんでした。もう一度お試しください。";
+  } catch (err) {
+    if (!silent) {
+      message.textContent =
+        err && err.name === "NotAllowedError"
+          ? "認証がキャンセルされました。もう一度お試しください。"
+          : "解除できませんでした。もう一度お試しください。";
+    }
+  }
+  return false;
+}
+
+document.getElementById("btn-unlock").addEventListener("click", () => attemptUnlock(false));
+
+document.getElementById("btn-lock-help").addEventListener("click", () => {
+  const ok = confirm(
+    "顔認証が使えない場合は、ロックを解除して設定をオフにできます。\n\n" +
+      "データは消えません。ロックはのぞき見防止のための機能で、" +
+      "データそのものを守るものではないため、この方法を用意しています。\n\n" +
+      "ロックをオフにしますか？"
+  );
+  if (!ok) return;
+  if (!confirm("本当にロックをオフにしますか？")) return;
+  lockConfig = { enabled: false, credentialId: null, graceSeconds: lockConfig.graceSeconds };
+  saveLockConfig();
+  releaseLock();
+  showToast("ロックをオフにしました");
+});
+
+document.getElementById("lock-toggle").addEventListener("change", async (e) => {
+  const toggle = e.target;
+  if (toggle.checked) {
+    toggle.disabled = true;
+    try {
+      const credentialId = await registerLock();
+      lockConfig = { enabled: true, credentialId, graceSeconds: lockConfig.graceSeconds };
+      saveLockConfig();
+      showToast("ロックをオンにしました");
+    } catch (err) {
+      console.warn("ロックの登録に失敗しました", err);
+      toggle.checked = false;
+      alert(
+        err && err.name === "NotAllowedError"
+          ? "登録がキャンセルされました。"
+          : "この端末では顔認証・指紋を登録できませんでした。"
+      );
+    } finally {
+      toggle.disabled = false;
+    }
+  } else {
+    lockConfig = { enabled: false, credentialId: null, graceSeconds: lockConfig.graceSeconds };
+    saveLockConfig();
+    showToast("ロックをオフにしました");
+  }
+  renderLockSettings();
+});
+
+document.getElementById("lock-grace").addEventListener("change", (e) => {
+  lockConfig.graceSeconds = Number(e.target.value);
+  saveLockConfig();
+});
+
+async function renderLockSettings() {
+  const availabilityEl = document.getElementById("lock-availability");
+  const controls = document.getElementById("lock-controls");
+  const toggle = document.getElementById("lock-toggle");
+  const graceField = document.getElementById("lock-grace-field");
+
+  const available = await biometricsAvailable();
+  if (!available) {
+    availabilityEl.textContent =
+      "この端末・ブラウザでは顔認証や指紋によるロックを利用できません。" +
+      "iPhoneの場合は、ホーム画面に追加してから開くと使えることがあります。";
+    controls.hidden = true;
+    return;
+  }
+
+  availabilityEl.textContent =
+    "アプリを開くときに、この端末の顔認証・指紋での確認を求めます。";
+  controls.hidden = false;
+  toggle.checked = lockConfig.enabled;
+  graceField.hidden = !lockConfig.enabled;
+  document.getElementById("lock-grace").value = String(lockConfig.graceSeconds);
+}
+
+// バックグラウンドから戻ったとき、離れていた時間が猶予を超えていれば掛け直す
+document.addEventListener("visibilitychange", () => {
+  if (!lockConfig.enabled) return;
+  if (document.hidden) {
+    lastHiddenAt = Date.now();
+    return;
+  }
+  if (isLocked) return;
+  const awaySeconds = (Date.now() - (lastHiddenAt || Date.now())) / 1000;
+  if (awaySeconds >= lockConfig.graceSeconds) engageLock();
+});
+
 // ---------- 初期化 ----------
 
 if ("serviceWorker" in navigator) {
@@ -1374,3 +1605,14 @@ if ("serviceWorker" in navigator) {
 
 requestPersistentStorage();
 showScreen("home");
+
+if (lockConfig.enabled) {
+  engageLock();
+  // 自動で認証を出せるブラウザではそのまま顔認証へ。
+  // 拒否された場合は解除ボタンからの操作を待つ。
+  attemptUnlock(true);
+} else {
+  // head のスクリプトが付けたクラスを必ず外す。
+  // 残したままだと画面が空白のままになる。
+  document.documentElement.classList.remove("app-locked");
+}
