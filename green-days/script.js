@@ -63,6 +63,7 @@ function normalizeDB(parsed) {
   }
 
   next.products.forEach((p) => {
+    if (!Array.isArray(p.aliases)) p.aliases = [];
     if (!p.stockByStore || typeof p.stockByStore !== "object") {
       p.stockByStore = {};
       if (typeof p.stock === "number" && fallback) p.stockByStore[fallback.id] = p.stock;
@@ -673,6 +674,8 @@ function openProductForm(id) {
   document.getElementById("product-id").value = product ? product.id : "";
   document.getElementById("product-name").value = product ? product.name : "";
   document.getElementById("product-category").value = product ? product.category || "" : "";
+  document.getElementById("product-aliases").value =
+    product && Array.isArray(product.aliases) ? product.aliases.join("、") : "";
   document.getElementById("product-price").value = product ? product.price : "";
   document.getElementById("product-low-stock").value = product ? product.lowStock : 5;
   document.getElementById("btn-product-delete").hidden = !product;
@@ -728,6 +731,7 @@ document.getElementById("product-form").addEventListener("submit", (e) => {
   const id = document.getElementById("product-id").value;
   const name = document.getElementById("product-name").value.trim();
   const category = document.getElementById("product-category").value.trim();
+  const aliases = parseAliasInput(document.getElementById("product-aliases").value);
   const price = Number(document.getElementById("product-price").value);
   const lowStock = Number(document.getElementById("product-low-stock").value);
 
@@ -759,6 +763,7 @@ document.getElementById("product-form").addEventListener("submit", (e) => {
   if (product) {
     product.name = name;
     product.category = category;
+    product.aliases = aliases;
     product.price = price;
     product.lowStock = lowStock;
     product.stockByStore = stockByStore;
@@ -767,6 +772,7 @@ document.getElementById("product-form").addEventListener("submit", (e) => {
       id: uid(),
       name,
       category,
+      aliases,
       price,
       lowStock,
       stockByStore,
@@ -849,18 +855,35 @@ document.getElementById("restock-form").addEventListener("submit", (e) => {
 // このアプリは貼り付けられたテキストを解析するだけ。よって画像もテキストも
 // 外部には一切送信されない。
 
-/** 全角数字・全角英字・全角スペースを半角へそろえる */
+/**
+ * 表記ゆれをそろえる。NFKC が全角数字・全角英字・半角カタカナをまとめて
+ * 直してくれるので、読み取り結果の細かな違いはここで吸収される。
+ */
 function normalizeText(str) {
-  return String(str)
-    .replace(/[０-９Ａ-Ｚａ-ｚ]/g, (c) =>
-      String.fromCharCode(c.charCodeAt(0) - 0xfee0)
-    )
-    .replace(/　/g, " ");
+  return String(str).normalize("NFKC").replace(/　/g, " ");
 }
 
-/** 商品名の照合用キー（空白・記号を落として小文字化） */
+/**
+ * 名前の照合用キー。カタカナはひらがなに寄せ、記号・空白・長音を落とす。
+ * 「キュウリ」「きゅうり」「キューリ」「きゅ うり」がすべて同じ鍵になる。
+ */
 function matchKey(str) {
-  return normalizeText(str).toLowerCase().replace(/[\s・･,，、.。'"’”「」()（）]/g, "");
+  return normalizeText(str)
+    .replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))
+    .toLowerCase()
+    .replace(/[\s・･,，、.。'"’”「」『』()（）\[\]【】\-‐－—ー~〜:：;；!！?？]/g, "");
+}
+
+/** 商品の呼び名すべて（登録名＋別名） */
+function productNames(product) {
+  return [product.name, ...(Array.isArray(product.aliases) ? product.aliases : [])];
+}
+
+function parseAliasInput(text) {
+  return String(text)
+    .split(/[,、，]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 function pad2(n) {
@@ -886,15 +909,58 @@ function extractDate(line) {
   return null;
 }
 
-const QTY_UNITS = "個|コ|こ|点|本|袋|パック|枚|箱|束|杯|皿|人前|セット|ケース|pcs|pc";
+/** カタカナをひらがなへ寄せ、長音を落とす。単位の表記ゆれを吸収するため */
+function kanaFold(str) {
+  return str
+    .replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))
+    .replace(/ー/g, "");
+}
+
+// kanaFold を通した後の形で書く。「本」「ほん」「ホン」がすべて拾えるよう、
+// 漢字とひらがなの両方を並べている。
+const QTY_UNITS = [
+  "個", "こ", "点", "本", "ほん", "袋", "ふくろ", "ぱっく", "枚", "まい",
+  "箱", "はこ", "束", "たば", "把", "わ", "玉", "たま", "株", "かぶ",
+  "杯", "はい", "皿", "さら", "人前", "にんまえ", "せっと", "けす", "ねっと",
+  "kg", "pcs", "pc",
+].join("|");
+
+/**
+ * 数量を探す前に、数量ではありえない数字を消しておく。
+ * 「きゅうり 486円」の 486 や、日付・時刻を数量と読み違えないようにするため。
+ */
+function stripNonQtyNumbers(line) {
+  return line
+    .replace(/[¥￥]\s*\d[\d,]*/g, " ")
+    .replace(/\d[\d,]*\s*円/g, " ")
+    .replace(/(@|単価)\s*\d[\d,]*/g, " ")
+    .replace(/\d{4}\s*[/年]\s*\d{1,2}\s*[/月]\s*\d{1,2}\s*日?/g, " ")
+    .replace(/\d{1,2}\s*[/月]\s*\d{1,2}\s*日?/g, " ")
+    .replace(/\d{1,2}\s*[:：]\s*\d{2}/g, " ");
+}
 
 /** 行から数量を取り出す。見つからなければ null */
 function extractQty(line) {
-  let m = line.match(new RegExp(`(\\d+)\\s*(?:${QTY_UNITS})`));
+  const cleaned = kanaFold(stripNonQtyNumbers(line));
+
+  let m = cleaned.match(new RegExp(`(\\d+)\\s*(?:${QTY_UNITS})`, "i"));
   if (m) return Number(m[1]);
-  m = line.match(/[×xX*]\s*(\d+)/);
+  m = cleaned.match(/[×x*]\s*(\d+)/i);
+  if (m) return Number(m[1]);
+  m = cleaned.match(/(\d+)\s*[×x*]/i);
+  if (m) return Number(m[1]);
+  // 単位のない裸の数字（「きゅうり 3」）。金額や日付は上で消してある。
+  m = cleaned.match(/(?:^|\s)(\d{1,3})(?=\s|$)/);
   if (m) return Number(m[1]);
   return null;
+}
+
+/**
+ * 「合計」「小計」など、明細ではなく集計を書いた行。
+ * 行頭に限るのは、「本日のきゅうり」のような普通の行を巻き込まないため。
+ */
+function isSummaryLine(line) {
+  return /^\s*(合計|小計|総計|売上計|計)/.test(line);
 }
 
 /** 行から金額を取り出す。[{ value, isUnit }] の配列を返す */
@@ -909,25 +975,32 @@ function extractPrices(line) {
   return found;
 }
 
-/** 行に含まれる登録済みの名前を探す（最長一致） */
-function findByNameInLine(line, list) {
+/**
+ * 行に含まれる登録済みの名前を探す。別名も含めて一番長く一致したものを採る。
+ * 「ミニトマト」は「トマト」も含むので、長いほうを優先しないと取り違える。
+ */
+function findByNameInLine(line, list, namesOf) {
   const key = matchKey(line);
   let best = null;
+  let bestLength = 0;
   list.forEach((item) => {
-    const itemKey = matchKey(item.name);
-    if (itemKey && key.includes(itemKey)) {
-      if (!best || itemKey.length > matchKey(best.name).length) best = item;
-    }
+    namesOf(item).forEach((name) => {
+      const nameKey = matchKey(name);
+      if (nameKey && key.includes(nameKey) && nameKey.length > bestLength) {
+        best = item;
+        bestLength = nameKey.length;
+      }
+    });
   });
   return best;
 }
 
 function findProductInLine(line) {
-  return findByNameInLine(line, db.products);
+  return findByNameInLine(line, db.products, productNames);
 }
 
 function findStoreInLine(line) {
-  return findByNameInLine(line, db.stores);
+  return findByNameInLine(line, db.stores, (s) => [s.name]);
 }
 
 /** 1行を売上候補に変換する。候補にならない行は null */
@@ -986,6 +1059,7 @@ function parseChatText(text, defaultStoreId) {
   lines.forEach((rawLine) => {
     const line = rawLine.trim();
     if (!line) return;
+    if (isSummaryLine(line)) return;
     const dateFound = extractDate(line);
     if (dateFound) contextDate = dateFound;
     // 「8/25 鹿沼店」のような見出し行は、以降の行の店舗として引き継ぐ

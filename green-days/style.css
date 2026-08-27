@@ -249,6 +249,23 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--green-500);
 
 #home-main { display: flex; flex-direction: column; gap: 12px; }
 
+.btn-big { padding: 16px; font-size: 16px; }
+
+.field-hint {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+.single-entry > summary {
+  cursor: pointer;
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--green-900);
+}
+.single-entry[open] > summary { margin-bottom: 12px; }
+
 /* ---- アプリのロック ---- */
 .lock-screen {
   position: fixed;

@@ -98,7 +98,18 @@
     <!-- 売上入力 -->
     <section id="screen-sale" class="screen" hidden>
       <div class="card">
-        <h2>売上を記録する</h2>
+        <h2>まとめて入力</h2>
+        <p class="note">
+          LINEなどのやりとりや、スクリーンショットから読み取った文章を貼り付けると、
+          売上をまとめて登録できます。
+        </p>
+        <button type="button" id="btn-open-import" class="btn btn-primary btn-big">
+          チャット・スクショから取込
+        </button>
+      </div>
+
+      <details class="card single-entry">
+        <summary>1件ずつ入力する</summary>
         <form id="sale-form" class="form" autocomplete="off">
           <label class="field">
             <span>店舗</span>
@@ -130,15 +141,7 @@
           <div id="sale-stock-warning" class="warning" hidden></div>
           <button type="submit" class="btn btn-primary">売上を記録する</button>
         </form>
-      </div>
-      <div class="card">
-        <h2>チャット・スクショからまとめて取込</h2>
-        <p class="note">
-          LINEなどのやりとりや、スクリーンショットから読み取った文章を貼り付けると、
-          売上をまとめて登録できます。
-        </p>
-        <button type="button" id="btn-open-import" class="btn btn-secondary">まとめて取込をひらく</button>
-      </div>
+      </details>
     </section>
 
     <!-- チャット取込 -->
@@ -209,6 +212,14 @@
           <label class="field">
             <span>カテゴリ（任意）</span>
             <input type="text" id="product-category" maxlength="20" placeholder="例：野菜">
+          </label>
+          <label class="field">
+            <span>別名（任意・読み取り用）</span>
+            <input type="text" id="product-aliases" maxlength="120" placeholder="例：ミニトマト、フルーツトマト">
+            <small class="field-hint">
+              チャットで別の呼び方をしている場合、ここに書いておくと取込で正しく判別できます。
+              「、」か「,」で区切ってください。
+            </small>
           </label>
           <div class="field-row">
             <label class="field">
