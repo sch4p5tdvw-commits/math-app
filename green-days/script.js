@@ -995,12 +995,26 @@ function unitPriceFromText(product, qty, prices, hintUnitPrice) {
   if (values.length >= 2) return Math.min(values[0], values[1]);
   if (values.length === 1) {
     const price = values[0];
-    if (product && price === product.price) return price;
-    if (qty > 1 && price % qty === 0) return price / qty;
-    return price;
+    if (qty === 1) return price; // 1点なら金額がそのまま単価
+    if (price % qty === 0) return price / qty;
+    // 割り切れない＝その日の中で値段の違うものが混ざっている。
+    // 金額を数量で割ると半端な単価になるので、書かれている単価を使う。
+    // 実際の金額は total として別に持つので、売上額はずれない。
+    if (hasHint) return hintUnitPrice;
+    if (product && Number(product.price) > 0) return Number(product.price);
+    return price / qty;
   }
   if (hasHint) return hintUnitPrice;
   return product ? product.price : 0;
+}
+
+/**
+ * 文章に書かれている合計金額。単価として明示された金額は除く。
+ * 「2点 421円」のように単価×数量で表せない金額を、そのまま残すために使う。
+ */
+function totalFromText(prices) {
+  const values = prices.filter((p) => !p.isUnit).map((p) => p.value);
+  return values.length ? Math.max(...values) : null;
 }
 
 /**
@@ -1071,6 +1085,12 @@ function findStoreInLine(line) {
 function buildRow({ source, storeId, product, qty, prices, hintUnitPrice, date }) {
   const finalQty = qty !== null && qty > 0 ? qty : 1;
   const resolved = resolveUnitPrice(product, finalQty, prices, hintUnitPrice);
+  const unitPrice = Number.isFinite(resolved.unitPrice) ? resolved.unitPrice : 0;
+
+  // 文章に合計が書かれていればそれが実際の売上額。単価×数量では表せない
+  // 金額（値段の違うものが混ざった日）を、そのまま記録するため。
+  const stated = totalFromText(prices);
+  const total = stated !== null ? stated : finalQty * unitPrice;
 
   return {
     id: uid(),
@@ -1078,7 +1098,8 @@ function buildRow({ source, storeId, product, qty, prices, hintUnitPrice, date }
     storeId: storeId || "",
     productId: product ? product.id : "",
     qty: finalQty,
-    unitPrice: Number.isFinite(resolved.unitPrice) ? resolved.unitPrice : 0,
+    unitPrice,
+    total,
     // 読み取り違いが疑われるときだけ入る。通常は null
     registeredPrice: resolved.registeredPrice,
     date,
@@ -1313,6 +1334,7 @@ function renderImportRows() {
     qtyInput.value = String(row.qty);
     qtyInput.addEventListener("input", () => {
       row.qty = Number(qtyInput.value) || 0;
+      recalcRowTotal(row);
       updateRowTotal(el, row);
       updateImportTotal();
     });
@@ -1331,6 +1353,7 @@ function renderImportRows() {
     priceInput.addEventListener("input", () => {
       row.unitPrice = Number(priceInput.value) || 0;
       row.unitPriceEdited = true;
+      recalcRowTotal(row);
       updateRowTotal(el, row);
       updateImportTotal();
     });
@@ -1346,6 +1369,7 @@ function renderImportRows() {
         row.unitPrice = row.registeredPrice;
         row.unitPriceEdited = true;
         row.registeredPrice = null;
+        recalcRowTotal(row);
         renderImportRows();
       });
       priceField.appendChild(swap);
@@ -1381,12 +1405,32 @@ function renderImportRows() {
 
 function updateRowTotal(el, row) {
   const totalEl = el.querySelector(".import-row-total");
-  if (totalEl) totalEl.textContent = `小計 ${formatYen(row.qty * row.unitPrice)}`;
+  if (!totalEl) return;
+  totalEl.textContent = `小計 ${formatYen(row.total)}`;
+
+  // 単価×数量と合わない分（値段の違うものが混ざった日）を添える
+  const diff = row.total - row.qty * row.unitPrice;
+  const noteEl = el.querySelector(".import-row-diff");
+  if (noteEl) noteEl.remove();
+  if (diff !== 0) {
+    const note = document.createElement("div");
+    note.className = "import-row-diff";
+    note.textContent =
+      diff < 0
+        ? `値引き -${formatYen(Math.abs(diff))}`
+        : `割増 +${formatYen(diff)}`;
+    totalEl.insertAdjacentElement("afterend", note);
+  }
+}
+
+/** 数量や単価を直したときは、合計もそれに合わせ直す */
+function recalcRowTotal(row) {
+  row.total = row.qty * row.unitPrice;
 }
 
 function updateImportTotal() {
   const selected = importRows.filter((r) => r.include && r.productId && r.storeId);
-  const total = selected.reduce((sum, r) => sum + r.qty * r.unitPrice, 0);
+  const total = selected.reduce((sum, r) => sum + r.total, 0);
   document.getElementById("import-total").textContent = formatYen(total);
   document.getElementById("import-count").textContent = String(selected.length);
 }
@@ -1415,7 +1459,7 @@ document.getElementById("btn-import-commit").addEventListener("click", () => {
       productName: product.name,
       qty: row.qty,
       unitPrice: row.unitPrice,
-      total: row.qty * row.unitPrice,
+      total: row.total,
       date: row.date,
       memo: "チャットから取込",
       createdAt: Date.now(),
