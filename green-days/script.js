@@ -1010,16 +1010,20 @@ function unitPriceFromText(product, qty, prices, hintUnitPrice) {
  * （unitPriceFromText の最後の行）。
  *
  * ただし読み取りを誤ると金額がそのまま記録に残ってしまうので、
- * 登録単価と桁が違うほどかけ離れているときだけ警告用に控えておく。
- * 値引き程度の差では黙っている。
+ * 桁を読み違えたとしか思えないほど離れているときだけ警告用に控えておく。
+ * 値引きは半額を割ることもあるので、5倍を境にする。216円が16円と読めれば
+ * 13.5倍になって引っかかるが、値引きでそこまで開くことはない。
  */
+const PRICE_WARNING_RATIO = 5;
+
 function resolveUnitPrice(product, qty, prices, hintUnitPrice) {
   const unitPrice = unitPriceFromText(product, qty, prices, hintUnitPrice);
   const registered = product ? Number(product.price) : 0;
   const farOff =
     registered > 0 &&
     unitPrice > 0 &&
-    (unitPrice >= registered * 2 || unitPrice * 2 <= registered);
+    (unitPrice >= registered * PRICE_WARNING_RATIO ||
+      unitPrice * PRICE_WARNING_RATIO <= registered);
   return { unitPrice, registeredPrice: farOff ? registered : null };
 }
 
