@@ -963,6 +963,45 @@ function isSummaryLine(line) {
   return /^\s*(合計|小計|総計|売上計|計)/.test(line);
 }
 
+/**
+ * 数字と単位だけでできた行（「216円」「6点 1,296円」）。
+ * 確定売上のお知らせのように、品名と数量が別の行に分かれる形式で、
+ * どの行を直前の品名の続きとみなすかの判定に使う。
+ * 文字が少しでも残る行は続きとみなさないので、雑談を巻き込まない。
+ */
+function isNumericDetailLine(line) {
+  const rest = kanaFold(normalizeText(line))
+    .replace(new RegExp(`\\d[\\d,]*\\s*(?:${QTY_UNITS})`, "gi"), "")
+    .replace(/[\d,]/g, "")
+    .replace(/[¥￥円@×x*\s:：・\-‐－—~〜()（）]/gi, "")
+    .replace(/単価|数量|金額|点数/g, "");
+  return rest === "" && /\d/.test(line);
+}
+
+/**
+ * 単価を決める。hintUnitPrice は「単価だけが別の行に書かれていた」ときの値。
+ */
+function resolveUnitPrice(product, qty, prices, hintUnitPrice) {
+  const explicit = prices.find((p) => p.isUnit);
+  if (explicit) return explicit.value;
+
+  const values = prices.map((p) => p.value);
+  const hasHint = hintUnitPrice !== null && hintUnitPrice !== undefined;
+
+  // 別行の単価 × 数量 が合計と一致すれば、その単価で確定できる
+  if (hasHint && values.some((v) => v === hintUnitPrice * qty)) return hintUnitPrice;
+
+  if (values.length >= 2) return Math.min(values[0], values[1]);
+  if (values.length === 1) {
+    const price = values[0];
+    if (product && price === product.price) return price;
+    if (qty > 1 && price % qty === 0) return price / qty;
+    return price;
+  }
+  if (hasHint) return hintUnitPrice;
+  return product ? product.price : 0;
+}
+
 /** 行から金額を取り出す。[{ value, isUnit }] の配列を返す */
 function extractPrices(line) {
   const found = [];
@@ -1003,71 +1042,108 @@ function findStoreInLine(line) {
   return findByNameInLine(line, db.stores, (s) => [s.name]);
 }
 
-/** 1行を売上候補に変換する。候補にならない行は null */
-function parseSaleLine(line, contextDate, contextStoreId) {
-  const product = findProductInLine(line);
-  const store = findStoreInLine(line);
-  const qty = extractQty(line);
-  const prices = extractPrices(line);
-
-  // 商品も見つからず、数量と金額の両方がそろってもいない行は売上ではないと判断
-  if (!product && !(qty !== null && prices.length > 0)) return null;
-
+/** 売上候補を1件つくる */
+function buildRow({ source, storeId, product, qty, prices, hintUnitPrice, date }) {
   const finalQty = qty !== null && qty > 0 ? qty : 1;
-  let unitPrice = null;
-
-  const explicitUnit = prices.find((p) => p.isUnit);
-  if (explicitUnit) {
-    unitPrice = explicitUnit.value;
-  } else if (prices.length >= 2) {
-    // 「@150 450円」のように単価と合計が並ぶケース
-    unitPrice = Math.min(prices[0].value, prices[1].value);
-  } else if (prices.length === 1) {
-    const price = prices[0].value;
-    if (product && price === product.price) {
-      unitPrice = price; // 登録単価とぴったり一致
-    } else if (finalQty > 1 && price % finalQty === 0) {
-      unitPrice = price / finalQty; // 合計とみなして割り戻す
-    } else {
-      unitPrice = price;
-    }
-  } else if (product) {
-    unitPrice = product.price; // 金額の記載なし → 登録単価を使う
-  }
-
+  let unitPrice = resolveUnitPrice(product, finalQty, prices, hintUnitPrice);
   if (unitPrice === null || Number.isNaN(unitPrice)) unitPrice = 0;
-
-  const storeId = store ? store.id : contextStoreId || "";
 
   return {
     id: uid(),
-    source: line,
-    storeId,
+    source,
+    storeId: storeId || "",
     productId: product ? product.id : "",
     qty: finalQty,
     unitPrice,
-    date: contextDate,
+    date,
     include: Boolean(product && storeId),
   };
 }
 
+/**
+ * 貼り付けられた文章を売上候補に変換する。
+ *
+ * 1行に品名・数量・金額がそろう形式と、確定売上のお知らせのように
+ *
+ *     なす
+ *     　 216円
+ *     　　　6点 1,296円
+ *
+ * と3行に分かれる形式の両方を読む。後者は品名の行をいったん保留し、
+ * 続く「数字だけの行」を吸収してから1件にまとめる。
+ */
 function parseChatText(text, defaultStoreId) {
   const lines = normalizeText(text).split(/\r?\n/);
   const rows = [];
   let contextDate = todayStr();
   let contextStoreId = defaultStoreId || "";
+  let pending = null; // { product, storeId, unitPrice, sources }
+
   lines.forEach((rawLine) => {
     const line = rawLine.trim();
     if (!line) return;
-    if (isSummaryLine(line)) return;
+
+    if (isSummaryLine(line)) {
+      pending = null;
+      return;
+    }
+
     const dateFound = extractDate(line);
     if (dateFound) contextDate = dateFound;
-    // 「8/25 鹿沼店」のような見出し行は、以降の行の店舗として引き継ぐ
     const storeFound = findStoreInLine(line);
     if (storeFound) contextStoreId = storeFound.id;
-    const row = parseSaleLine(line, contextDate, contextStoreId);
-    if (row) rows.push(row);
+
+    const product = findProductInLine(line);
+    const qty = extractQty(line);
+    const prices = extractPrices(line);
+
+    // 数字だけの行は、直前に保留した品名の続きとして扱う
+    if (!product && isNumericDetailLine(line)) {
+      if (!pending) return; // 結びつく品名がなければ、集計行などとみなして捨てる
+      pending.sources.push(line);
+      if (qty === null) {
+        if (prices.length) pending.unitPrice = prices[0].value; // 単価だけの行
+        return;
+      }
+      rows.push(
+        buildRow({
+          source: pending.sources.join("　"),
+          storeId: pending.storeId,
+          product: pending.product,
+          qty,
+          prices,
+          hintUnitPrice: pending.unitPrice,
+          date: contextDate,
+        })
+      );
+      pending = null;
+      return;
+    }
+
+    // 品名だけの行 → 続きの明細を待つ
+    if (product && qty === null && prices.length === 0) {
+      pending = { product, storeId: contextStoreId, unitPrice: null, sources: [line] };
+      return;
+    }
+
+    pending = null;
+
+    // 1行で完結する形式。商品も、数量と金額の組もない行は売上ではない
+    if (!product && !(qty !== null && prices.length > 0)) return;
+
+    rows.push(
+      buildRow({
+        source: line,
+        storeId: storeFound ? storeFound.id : contextStoreId,
+        product,
+        qty,
+        prices,
+        hintUnitPrice: null,
+        date: contextDate,
+      })
+    );
   });
+
   return rows;
 }
 
