@@ -9,9 +9,12 @@
 const STORAGE_KEY = "greenDays.v1";
 const SNAPSHOT_KEY = "greenDays.snapshots.v1";
 const BACKUP_META_KEY = "greenDays.backupMeta.v1";
+const CHANGE_COUNT_KEY = "greenDays.changeCount.v1";
 
 const MAX_SNAPSHOTS = 5;
 const BACKUP_REMINDER_DAYS = 7;
+// 日数だけを見ていると、短期間にたくさん入力した分が催促されないまま残る
+const BACKUP_REMINDER_RECORDS = 20;
 
 /** @type {{products: Array, sales: Array, restocks: Array}} */
 let db = loadDB();
@@ -60,6 +63,7 @@ function normalizeDB(parsed) {
   }
 
   next.products.forEach((p) => {
+    if (!Array.isArray(p.aliases)) p.aliases = [];
     if (!p.stockByStore || typeof p.stockByStore !== "object") {
       p.stockByStore = {};
       if (typeof p.stock === "number" && fallback) p.stockByStore[fallback.id] = p.stock;
@@ -150,9 +154,21 @@ function fillStoreSelect(select, selectedId) {
   });
 }
 
+/**
+ * 保存のたびに増える通し番号。バックアップ時の値と比べることで
+ * 「書き出したあと何回変えたか」が分かる。件数の差だけを見ていると、
+ * 足した数と消した数が同じときに変更が無かったことになってしまう。
+ */
+let changeCounter = (() => {
+  const raw = Number(localStorage.getItem(CHANGE_COUNT_KEY));
+  return Number.isFinite(raw) ? raw : 0;
+})();
+
 function saveDB() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+    changeCounter += 1;
+    localStorage.setItem(CHANGE_COUNT_KEY, String(changeCounter));
   } catch (e) {
     // 保存できないまま操作を続けると、記録したつもりのものが消える。
     // 黙って失敗させず、必ず知らせて書き出しを促す。
@@ -233,11 +249,12 @@ function maybeAutoSnapshot() {
 // ---------- バックアップの記録 ----------
 
 function loadBackupMeta() {
+  const fallback = { at: null, recordCount: 0, changeCount: 0 };
   try {
     const raw = localStorage.getItem(BACKUP_META_KEY);
-    return raw ? JSON.parse(raw) : { at: null, recordCount: 0 };
+    return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
   } catch (e) {
-    return { at: null, recordCount: 0 };
+    return fallback;
   }
 }
 
@@ -245,7 +262,11 @@ function markBackedUp() {
   try {
     localStorage.setItem(
       BACKUP_META_KEY,
-      JSON.stringify({ at: Date.now(), recordCount: totalRecordCount() })
+      JSON.stringify({
+        at: Date.now(),
+        recordCount: totalRecordCount(),
+        changeCount: changeCounter,
+      })
     );
   } catch (e) {
     console.warn("バックアップ日時を記録できませんでした", e);
@@ -269,8 +290,8 @@ function updateBackupBanner() {
     banner.hidden = true;
     return;
   }
-  // 前回のバックアップ以降に増減がなければ催促しない
-  if (meta.at && meta.recordCount === count) {
+  // 書き出したあと一度も変えていなければ催促しない
+  if (meta.at && pendingChanges(meta) === 0) {
     banner.hidden = true;
     return;
   }
@@ -281,13 +302,30 @@ function updateBackupBanner() {
     detail.textContent = `まだ一度も書き出していません（${count}件の記録）`;
     return;
   }
+
   const days = daysSince(meta.at);
+  const added = count - meta.recordCount;
+  // 記録が増えているときはその件数を、そうでないときは変更があったことだけを伝える
+  const changeText = added > 0 ? `${added}件ふえています` : "変更があります";
+
+  // 日が経ったとき、あるいは短期間でも変更がたまったときに知らせる
   if (days >= BACKUP_REMINDER_DAYS) {
     banner.hidden = false;
-    detail.textContent = `前回から${days}日、${count - meta.recordCount}件ふえています`;
+    detail.textContent = `前回から${days}日、${changeText}`;
+    return;
+  }
+  if (pendingChanges(meta) >= BACKUP_REMINDER_RECORDS) {
+    banner.hidden = false;
+    detail.textContent =
+      days === 0 ? `前回の書き出しから${changeText}` : `前回から${days}日で${changeText}`;
     return;
   }
   banner.hidden = true;
+}
+
+/** 前回のバックアップ以降に保存された回数 */
+function pendingChanges(meta) {
+  return Math.max(0, changeCounter - (meta.changeCount || 0));
 }
 
 function findProduct(id) {
@@ -335,6 +373,13 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
 
 function renderHome() {
   updateBackupBanner();
+
+  // 空のときに ¥0 だけを並べると、新規なのかデータを見失ったのか区別がつかない
+  const isEmpty = totalRecordCount() === 0;
+  document.getElementById("empty-state").hidden = !isEmpty;
+  document.getElementById("home-main").hidden = isEmpty;
+  if (isEmpty) return;
+
   const today = todayStr();
   const monthPrefix = today.slice(0, 7); // YYYY-MM
 
@@ -629,6 +674,8 @@ function openProductForm(id) {
   document.getElementById("product-id").value = product ? product.id : "";
   document.getElementById("product-name").value = product ? product.name : "";
   document.getElementById("product-category").value = product ? product.category || "" : "";
+  document.getElementById("product-aliases").value =
+    product && Array.isArray(product.aliases) ? product.aliases.join("、") : "";
   document.getElementById("product-price").value = product ? product.price : "";
   document.getElementById("product-low-stock").value = product ? product.lowStock : 5;
   document.getElementById("btn-product-delete").hidden = !product;
@@ -684,6 +731,7 @@ document.getElementById("product-form").addEventListener("submit", (e) => {
   const id = document.getElementById("product-id").value;
   const name = document.getElementById("product-name").value.trim();
   const category = document.getElementById("product-category").value.trim();
+  const aliases = parseAliasInput(document.getElementById("product-aliases").value);
   const price = Number(document.getElementById("product-price").value);
   const lowStock = Number(document.getElementById("product-low-stock").value);
 
@@ -715,6 +763,7 @@ document.getElementById("product-form").addEventListener("submit", (e) => {
   if (product) {
     product.name = name;
     product.category = category;
+    product.aliases = aliases;
     product.price = price;
     product.lowStock = lowStock;
     product.stockByStore = stockByStore;
@@ -723,6 +772,7 @@ document.getElementById("product-form").addEventListener("submit", (e) => {
       id: uid(),
       name,
       category,
+      aliases,
       price,
       lowStock,
       stockByStore,
@@ -805,18 +855,35 @@ document.getElementById("restock-form").addEventListener("submit", (e) => {
 // このアプリは貼り付けられたテキストを解析するだけ。よって画像もテキストも
 // 外部には一切送信されない。
 
-/** 全角数字・全角英字・全角スペースを半角へそろえる */
+/**
+ * 表記ゆれをそろえる。NFKC が全角数字・全角英字・半角カタカナをまとめて
+ * 直してくれるので、読み取り結果の細かな違いはここで吸収される。
+ */
 function normalizeText(str) {
-  return String(str)
-    .replace(/[０-９Ａ-Ｚａ-ｚ]/g, (c) =>
-      String.fromCharCode(c.charCodeAt(0) - 0xfee0)
-    )
-    .replace(/　/g, " ");
+  return String(str).normalize("NFKC").replace(/　/g, " ");
 }
 
-/** 商品名の照合用キー（空白・記号を落として小文字化） */
+/**
+ * 名前の照合用キー。カタカナはひらがなに寄せ、記号・空白・長音を落とす。
+ * 「キュウリ」「きゅうり」「キューリ」「きゅ うり」がすべて同じ鍵になる。
+ */
 function matchKey(str) {
-  return normalizeText(str).toLowerCase().replace(/[\s・･,，、.。'"’”「」()（）]/g, "");
+  return normalizeText(str)
+    .replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))
+    .toLowerCase()
+    .replace(/[\s・･,，、.。'"’”「」『』()（）\[\]【】\-‐－—ー~〜:：;；!！?？]/g, "");
+}
+
+/** 商品の呼び名すべて（登録名＋別名） */
+function productNames(product) {
+  return [product.name, ...(Array.isArray(product.aliases) ? product.aliases : [])];
+}
+
+function parseAliasInput(text) {
+  return String(text)
+    .split(/[,、，]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 function pad2(n) {
@@ -842,15 +909,122 @@ function extractDate(line) {
   return null;
 }
 
-const QTY_UNITS = "個|コ|こ|点|本|袋|パック|枚|箱|束|杯|皿|人前|セット|ケース|pcs|pc";
+/** カタカナをひらがなへ寄せ、長音を落とす。単位の表記ゆれを吸収するため */
+function kanaFold(str) {
+  return str
+    .replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))
+    .replace(/ー/g, "");
+}
+
+// kanaFold を通した後の形で書く。「本」「ほん」「ホン」がすべて拾えるよう、
+// 漢字とひらがなの両方を並べている。
+const QTY_UNITS = [
+  "個", "こ", "点", "本", "ほん", "袋", "ふくろ", "ぱっく", "枚", "まい",
+  "箱", "はこ", "束", "たば", "把", "わ", "玉", "たま", "株", "かぶ",
+  "杯", "はい", "皿", "さら", "人前", "にんまえ", "せっと", "けす", "ねっと",
+  "kg", "pcs", "pc",
+].join("|");
+
+/**
+ * 数量を探す前に、数量ではありえない数字を消しておく。
+ * 「きゅうり 486円」の 486 や、日付・時刻を数量と読み違えないようにするため。
+ */
+function stripNonQtyNumbers(line) {
+  return line
+    .replace(/[¥￥]\s*\d[\d,]*/g, " ")
+    .replace(/\d[\d,]*\s*円/g, " ")
+    .replace(/(@|単価)\s*\d[\d,]*/g, " ")
+    .replace(/\d{4}\s*[/年]\s*\d{1,2}\s*[/月]\s*\d{1,2}\s*日?/g, " ")
+    .replace(/\d{1,2}\s*[/月]\s*\d{1,2}\s*日?/g, " ")
+    .replace(/\d{1,2}\s*[:：]\s*\d{2}/g, " ");
+}
 
 /** 行から数量を取り出す。見つからなければ null */
 function extractQty(line) {
-  let m = line.match(new RegExp(`(\\d+)\\s*(?:${QTY_UNITS})`));
+  const cleaned = kanaFold(stripNonQtyNumbers(line));
+
+  let m = cleaned.match(new RegExp(`(\\d+)\\s*(?:${QTY_UNITS})`, "i"));
   if (m) return Number(m[1]);
-  m = line.match(/[×xX*]\s*(\d+)/);
+  m = cleaned.match(/[×x*]\s*(\d+)/i);
+  if (m) return Number(m[1]);
+  m = cleaned.match(/(\d+)\s*[×x*]/i);
+  if (m) return Number(m[1]);
+  // 単位のない裸の数字（「きゅうり 3」）。金額や日付は上で消してある。
+  m = cleaned.match(/(?:^|\s)(\d{1,3})(?=\s|$)/);
   if (m) return Number(m[1]);
   return null;
+}
+
+/**
+ * 「合計」「小計」など、明細ではなく集計を書いた行。
+ * 行頭に限るのは、「本日のきゅうり」のような普通の行を巻き込まないため。
+ */
+function isSummaryLine(line) {
+  return /^\s*(合計|小計|総計|売上計|計)/.test(line);
+}
+
+/**
+ * 数字と単位だけでできた行（「216円」「6点 1,296円」）。
+ * 確定売上のお知らせのように、品名と数量が別の行に分かれる形式で、
+ * どの行を直前の品名の続きとみなすかの判定に使う。
+ * 文字が少しでも残る行は続きとみなさないので、雑談を巻き込まない。
+ */
+function isNumericDetailLine(line) {
+  const rest = kanaFold(normalizeText(line))
+    .replace(new RegExp(`\\d[\\d,]*\\s*(?:${QTY_UNITS})`, "gi"), "")
+    .replace(/[\d,]/g, "")
+    .replace(/[¥￥円@×x*\s:：・\-‐－—~〜()（）]/gi, "")
+    .replace(/単価|数量|金額|点数/g, "");
+  return rest === "" && /\d/.test(line);
+}
+
+/**
+ * 文章に書かれている内容から単価を読む。
+ * hintUnitPrice は「単価だけが別の行に書かれていた」ときの値。
+ */
+function unitPriceFromText(product, qty, prices, hintUnitPrice) {
+  const explicit = prices.find((p) => p.isUnit);
+  if (explicit) return explicit.value;
+
+  const values = prices.map((p) => p.value);
+  const hasHint = hintUnitPrice !== null && hintUnitPrice !== undefined;
+
+  // 別行の単価 × 数量 が合計と一致すれば、その単価で確定できる
+  if (hasHint && values.some((v) => v === hintUnitPrice * qty)) return hintUnitPrice;
+
+  if (values.length >= 2) return Math.min(values[0], values[1]);
+  if (values.length === 1) {
+    const price = values[0];
+    if (product && price === product.price) return price;
+    if (qty > 1 && price % qty === 0) return price / qty;
+    return price;
+  }
+  if (hasHint) return hintUnitPrice;
+  return product ? product.price : 0;
+}
+
+/**
+ * 取込に使う単価。文章に書かれている金額をそのまま採る。
+ * 価格は日によって変わるので、商品に登録した単価で上書きしてはいけない。
+ * 登録単価が使われるのは、文章から金額が読めなかったときだけ
+ * （unitPriceFromText の最後の行）。
+ *
+ * ただし読み取りを誤ると金額がそのまま記録に残ってしまうので、
+ * 桁を読み違えたとしか思えないほど離れているときだけ警告用に控えておく。
+ * 値引きは半額を割ることもあるので、5倍を境にする。216円が16円と読めれば
+ * 13.5倍になって引っかかるが、値引きでそこまで開くことはない。
+ */
+const PRICE_WARNING_RATIO = 5;
+
+function resolveUnitPrice(product, qty, prices, hintUnitPrice) {
+  const unitPrice = unitPriceFromText(product, qty, prices, hintUnitPrice);
+  const registered = product ? Number(product.price) : 0;
+  const farOff =
+    registered > 0 &&
+    unitPrice > 0 &&
+    (unitPrice >= registered * PRICE_WARNING_RATIO ||
+      unitPrice * PRICE_WARNING_RATIO <= registered);
+  return { unitPrice, registeredPrice: farOff ? registered : null };
 }
 
 /** 行から金額を取り出す。[{ value, isUnit }] の配列を返す */
@@ -865,91 +1039,137 @@ function extractPrices(line) {
   return found;
 }
 
-/** 行に含まれる登録済みの名前を探す（最長一致） */
-function findByNameInLine(line, list) {
+/**
+ * 行に含まれる登録済みの名前を探す。別名も含めて一番長く一致したものを採る。
+ * 「ミニトマト」は「トマト」も含むので、長いほうを優先しないと取り違える。
+ */
+function findByNameInLine(line, list, namesOf) {
   const key = matchKey(line);
   let best = null;
+  let bestLength = 0;
   list.forEach((item) => {
-    const itemKey = matchKey(item.name);
-    if (itemKey && key.includes(itemKey)) {
-      if (!best || itemKey.length > matchKey(best.name).length) best = item;
-    }
+    namesOf(item).forEach((name) => {
+      const nameKey = matchKey(name);
+      if (nameKey && key.includes(nameKey) && nameKey.length > bestLength) {
+        best = item;
+        bestLength = nameKey.length;
+      }
+    });
   });
   return best;
 }
 
 function findProductInLine(line) {
-  return findByNameInLine(line, db.products);
+  return findByNameInLine(line, db.products, productNames);
 }
 
 function findStoreInLine(line) {
-  return findByNameInLine(line, db.stores);
+  return findByNameInLine(line, db.stores, (s) => [s.name]);
 }
 
-/** 1行を売上候補に変換する。候補にならない行は null */
-function parseSaleLine(line, contextDate, contextStoreId) {
-  const product = findProductInLine(line);
-  const store = findStoreInLine(line);
-  const qty = extractQty(line);
-  const prices = extractPrices(line);
-
-  // 商品も見つからず、数量と金額の両方がそろってもいない行は売上ではないと判断
-  if (!product && !(qty !== null && prices.length > 0)) return null;
-
+/** 売上候補を1件つくる */
+function buildRow({ source, storeId, product, qty, prices, hintUnitPrice, date }) {
   const finalQty = qty !== null && qty > 0 ? qty : 1;
-  let unitPrice = null;
-
-  const explicitUnit = prices.find((p) => p.isUnit);
-  if (explicitUnit) {
-    unitPrice = explicitUnit.value;
-  } else if (prices.length >= 2) {
-    // 「@150 450円」のように単価と合計が並ぶケース
-    unitPrice = Math.min(prices[0].value, prices[1].value);
-  } else if (prices.length === 1) {
-    const price = prices[0].value;
-    if (product && price === product.price) {
-      unitPrice = price; // 登録単価とぴったり一致
-    } else if (finalQty > 1 && price % finalQty === 0) {
-      unitPrice = price / finalQty; // 合計とみなして割り戻す
-    } else {
-      unitPrice = price;
-    }
-  } else if (product) {
-    unitPrice = product.price; // 金額の記載なし → 登録単価を使う
-  }
-
-  if (unitPrice === null || Number.isNaN(unitPrice)) unitPrice = 0;
-
-  const storeId = store ? store.id : contextStoreId || "";
+  const resolved = resolveUnitPrice(product, finalQty, prices, hintUnitPrice);
 
   return {
     id: uid(),
-    source: line,
-    storeId,
+    source,
+    storeId: storeId || "",
     productId: product ? product.id : "",
     qty: finalQty,
-    unitPrice,
-    date: contextDate,
+    unitPrice: Number.isFinite(resolved.unitPrice) ? resolved.unitPrice : 0,
+    // 読み取り違いが疑われるときだけ入る。通常は null
+    registeredPrice: resolved.registeredPrice,
+    date,
     include: Boolean(product && storeId),
   };
 }
 
+/**
+ * 貼り付けられた文章を売上候補に変換する。
+ *
+ * 1行に品名・数量・金額がそろう形式と、確定売上のお知らせのように
+ *
+ *     なす
+ *     　 216円
+ *     　　　6点 1,296円
+ *
+ * と3行に分かれる形式の両方を読む。後者は品名の行をいったん保留し、
+ * 続く「数字だけの行」を吸収してから1件にまとめる。
+ */
 function parseChatText(text, defaultStoreId) {
   const lines = normalizeText(text).split(/\r?\n/);
   const rows = [];
   let contextDate = todayStr();
   let contextStoreId = defaultStoreId || "";
+  let pending = null; // { product, storeId, unitPrice, sources }
+
   lines.forEach((rawLine) => {
     const line = rawLine.trim();
     if (!line) return;
+
+    if (isSummaryLine(line)) {
+      pending = null;
+      return;
+    }
+
     const dateFound = extractDate(line);
     if (dateFound) contextDate = dateFound;
-    // 「8/25 鹿沼店」のような見出し行は、以降の行の店舗として引き継ぐ
     const storeFound = findStoreInLine(line);
     if (storeFound) contextStoreId = storeFound.id;
-    const row = parseSaleLine(line, contextDate, contextStoreId);
-    if (row) rows.push(row);
+
+    const product = findProductInLine(line);
+    const qty = extractQty(line);
+    const prices = extractPrices(line);
+
+    // 数字だけの行は、直前に保留した品名の続きとして扱う
+    if (!product && isNumericDetailLine(line)) {
+      if (!pending) return; // 結びつく品名がなければ、集計行などとみなして捨てる
+      pending.sources.push(line);
+      if (qty === null) {
+        if (prices.length) pending.unitPrice = prices[0].value; // 単価だけの行
+        return;
+      }
+      rows.push(
+        buildRow({
+          source: pending.sources.join("　"),
+          storeId: pending.storeId,
+          product: pending.product,
+          qty,
+          prices,
+          hintUnitPrice: pending.unitPrice,
+          date: contextDate,
+        })
+      );
+      pending = null;
+      return;
+    }
+
+    // 品名だけの行 → 続きの明細を待つ
+    if (product && qty === null && prices.length === 0) {
+      pending = { product, storeId: contextStoreId, unitPrice: null, sources: [line] };
+      return;
+    }
+
+    pending = null;
+
+    // 1行で完結する形式。商品も、数量と金額の組もない行は売上ではない
+    if (!product && !(qty !== null && prices.length > 0)) return;
+
+    rows.push(
+      buildRow({
+        source: line,
+        storeId: storeFound ? storeFound.id : contextStoreId,
+        product,
+        qty,
+        prices,
+        hintUnitPrice: null,
+        date: contextDate,
+      })
+    );
   });
+
   return rows;
 }
 
@@ -1115,6 +1335,22 @@ function renderImportRows() {
       updateImportTotal();
     });
     priceField.appendChild(priceInput);
+
+    // 金額がかけ離れているときだけ、読み取り違いを疑って知らせる
+    if (row.registeredPrice) {
+      const swap = document.createElement("button");
+      swap.type = "button";
+      swap.className = "price-hint";
+      swap.textContent = `登録は${formatYen(row.registeredPrice)}。読み違いなら押す`;
+      swap.addEventListener("click", () => {
+        row.unitPrice = row.registeredPrice;
+        row.unitPriceEdited = true;
+        row.registeredPrice = null;
+        renderImportRows();
+      });
+      priceField.appendChild(swap);
+    }
+
     grid.appendChild(priceField);
 
     // 日付
@@ -1486,7 +1722,7 @@ document.getElementById("btn-banner-backup").addEventListener("click", () => {
   else downloadBackup();
 });
 
-document.getElementById("import-file").addEventListener("change", (e) => {
+function handleBackupFileChosen(e) {
   const file = e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
@@ -1518,7 +1754,11 @@ document.getElementById("import-file").addEventListener("change", (e) => {
     }
   };
   reader.readAsText(file);
-});
+}
+
+// 設定からも、データが空のときのホーム画面からも同じ復元ができる
+document.getElementById("import-file").addEventListener("change", handleBackupFileChosen);
+document.getElementById("empty-import-file").addEventListener("change", handleBackupFileChosen);
 
 document.getElementById("btn-reset").addEventListener("click", () => {
   if (!confirm("すべてのデータを削除します。よろしいですか？\n\n（削除の直前の状態は復元ポイントに残ります）")) return;
@@ -1644,9 +1884,13 @@ function renderSettings() {
   } else {
     const days = daysSince(meta.at);
     const d = new Date(meta.at);
-    lastEl.textContent =
-      days === 0 ? "今日" : days === 1 ? "昨日" : `${toDateStr(d)}（${days}日前）`;
-    lastEl.classList.toggle("warn", days >= BACKUP_REMINDER_DAYS);
+    const when = days === 0 ? "今日" : days === 1 ? "昨日" : `${toDateStr(d)}（${days}日前）`;
+    const pending = pendingChanges(meta);
+    lastEl.textContent = pending > 0 ? `${when}・その後${pending}回の変更` : when;
+    lastEl.classList.toggle(
+      "warn",
+      days >= BACKUP_REMINDER_DAYS || pending >= BACKUP_REMINDER_RECORDS
+    );
   }
 
   renderSnapshotList();

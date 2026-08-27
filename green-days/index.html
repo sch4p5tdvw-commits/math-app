@@ -47,6 +47,25 @@
         </div>
         <button type="button" id="btn-banner-backup" class="btn btn-primary btn-compact">今すぐ</button>
       </div>
+
+      <div id="empty-state" class="card" hidden>
+        <h2>まだデータがありません</h2>
+        <p class="note warn-note">
+          <b>以前このアプリに入れたはずのデータが見えない場合</b>、開き方が変わった可能性があります。
+          Safariで開いたときと、ホーム画面のアイコンから開いたときとでは、
+          iPhoneがデータを<b>別々の場所に保存する</b>ことがあります。
+          もう一方の開き方を試すと、データがそのまま残っていることがあります。
+        </p>
+        <p class="note">
+          いずれの場合も、書き出しておいたバックアップファイルからいつでも戻せます。
+        </p>
+        <label class="btn btn-primary file-btn">
+          バックアップから復元する
+          <input type="file" id="empty-import-file" accept="application/json,.json" hidden>
+        </label>
+      </div>
+
+      <div id="home-main">
       <div class="card summary-card">
         <h2>今日の売上</h2>
         <div class="big-number" id="home-today-total">¥0</div>
@@ -73,12 +92,24 @@
         <h2>最近の売上</h2>
         <div id="home-recent-sales" class="list"></div>
       </div>
+      </div>
     </section>
 
     <!-- 売上入力 -->
     <section id="screen-sale" class="screen" hidden>
       <div class="card">
-        <h2>売上を記録する</h2>
+        <h2>まとめて入力</h2>
+        <p class="note">
+          LINEなどのやりとりや、スクリーンショットから読み取った文章を貼り付けると、
+          売上をまとめて登録できます。
+        </p>
+        <button type="button" id="btn-open-import" class="btn btn-primary btn-big">
+          チャット・スクショから取込
+        </button>
+      </div>
+
+      <details class="card single-entry">
+        <summary>1件ずつ入力する</summary>
         <form id="sale-form" class="form" autocomplete="off">
           <label class="field">
             <span>店舗</span>
@@ -110,15 +141,7 @@
           <div id="sale-stock-warning" class="warning" hidden></div>
           <button type="submit" class="btn btn-primary">売上を記録する</button>
         </form>
-      </div>
-      <div class="card">
-        <h2>チャット・スクショからまとめて取込</h2>
-        <p class="note">
-          LINEなどのやりとりや、スクリーンショットから読み取った文章を貼り付けると、
-          売上をまとめて登録できます。
-        </p>
-        <button type="button" id="btn-open-import" class="btn btn-secondary">まとめて取込をひらく</button>
-      </div>
+      </details>
     </section>
 
     <!-- チャット取込 -->
@@ -189,6 +212,14 @@
           <label class="field">
             <span>カテゴリ（任意）</span>
             <input type="text" id="product-category" maxlength="20" placeholder="例：野菜">
+          </label>
+          <label class="field">
+            <span>別名（任意・読み取り用）</span>
+            <input type="text" id="product-aliases" maxlength="120" placeholder="例：ミニトマト、フルーツトマト">
+            <small class="field-hint">
+              チャットで別の呼び方をしている場合、ここに書いておくと取込で正しく判別できます。
+              「、」か「,」で区切ってください。
+            </small>
           </label>
           <div class="field-row">
             <label class="field">
