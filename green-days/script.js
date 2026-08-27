@@ -979,9 +979,10 @@ function isNumericDetailLine(line) {
 }
 
 /**
- * 単価を決める。hintUnitPrice は「単価だけが別の行に書かれていた」ときの値。
+ * 文章に書かれている内容から単価を読む。
+ * hintUnitPrice は「単価だけが別の行に書かれていた」ときの値。
  */
-function resolveUnitPrice(product, qty, prices, hintUnitPrice) {
+function unitPriceFromText(product, qty, prices, hintUnitPrice) {
   const explicit = prices.find((p) => p.isUnit);
   if (explicit) return explicit.value;
 
@@ -1000,6 +1001,26 @@ function resolveUnitPrice(product, qty, prices, hintUnitPrice) {
   }
   if (hasHint) return hintUnitPrice;
   return product ? product.price : 0;
+}
+
+/**
+ * 取込に使う単価。文章に書かれている金額をそのまま採る。
+ * 価格は日によって変わるので、商品に登録した単価で上書きしてはいけない。
+ * 登録単価が使われるのは、文章から金額が読めなかったときだけ
+ * （unitPriceFromText の最後の行）。
+ *
+ * ただし読み取りを誤ると金額がそのまま記録に残ってしまうので、
+ * 登録単価と桁が違うほどかけ離れているときだけ警告用に控えておく。
+ * 値引き程度の差では黙っている。
+ */
+function resolveUnitPrice(product, qty, prices, hintUnitPrice) {
+  const unitPrice = unitPriceFromText(product, qty, prices, hintUnitPrice);
+  const registered = product ? Number(product.price) : 0;
+  const farOff =
+    registered > 0 &&
+    unitPrice > 0 &&
+    (unitPrice >= registered * 2 || unitPrice * 2 <= registered);
+  return { unitPrice, registeredPrice: farOff ? registered : null };
 }
 
 /** 行から金額を取り出す。[{ value, isUnit }] の配列を返す */
@@ -1045,8 +1066,7 @@ function findStoreInLine(line) {
 /** 売上候補を1件つくる */
 function buildRow({ source, storeId, product, qty, prices, hintUnitPrice, date }) {
   const finalQty = qty !== null && qty > 0 ? qty : 1;
-  let unitPrice = resolveUnitPrice(product, finalQty, prices, hintUnitPrice);
-  if (unitPrice === null || Number.isNaN(unitPrice)) unitPrice = 0;
+  const resolved = resolveUnitPrice(product, finalQty, prices, hintUnitPrice);
 
   return {
     id: uid(),
@@ -1054,7 +1074,9 @@ function buildRow({ source, storeId, product, qty, prices, hintUnitPrice, date }
     storeId: storeId || "",
     productId: product ? product.id : "",
     qty: finalQty,
-    unitPrice,
+    unitPrice: Number.isFinite(resolved.unitPrice) ? resolved.unitPrice : 0,
+    // 読み取り違いが疑われるときだけ入る。通常は null
+    registeredPrice: resolved.registeredPrice,
     date,
     include: Boolean(product && storeId),
   };
@@ -1309,6 +1331,22 @@ function renderImportRows() {
       updateImportTotal();
     });
     priceField.appendChild(priceInput);
+
+    // 金額がかけ離れているときだけ、読み取り違いを疑って知らせる
+    if (row.registeredPrice) {
+      const swap = document.createElement("button");
+      swap.type = "button";
+      swap.className = "price-hint";
+      swap.textContent = `登録は${formatYen(row.registeredPrice)}。読み違いなら押す`;
+      swap.addEventListener("click", () => {
+        row.unitPrice = row.registeredPrice;
+        row.unitPriceEdited = true;
+        row.registeredPrice = null;
+        renderImportRows();
+      });
+      priceField.appendChild(swap);
+    }
+
     grid.appendChild(priceField);
 
     // 日付
