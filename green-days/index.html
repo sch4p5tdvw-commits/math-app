@@ -369,12 +369,19 @@
     <!-- 履歴 -->
     <section id="screen-history" class="screen" hidden>
       <div class="card">
-        <h2>売上履歴</h2>
-        <div id="history-sales-list" class="list"></div>
-      </div>
-      <div class="card">
-        <h2>入荷・棚卸し履歴</h2>
-        <div id="history-restock-list" class="list"></div>
+        <div class="chiprow" id="history-kind-chips">
+          <button type="button" class="chip active" data-kind="sales">売上</button>
+          <button type="button" class="chip" data-kind="restocks">出荷・棚卸し</button>
+        </div>
+        <div class="chiprow" id="history-store-chips"></div>
+        <div class="card-head">
+          <h2 id="history-title">売上の履歴</h2>
+          <span class="badge badge-neutral" id="history-count">0</span>
+        </div>
+        <div id="history-list" class="list"></div>
+        <button type="button" id="btn-history-more" class="btn btn-secondary" hidden>
+          さらに表示
+        </button>
       </div>
     </section>
 
