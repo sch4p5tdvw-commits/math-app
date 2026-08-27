@@ -6,6 +6,10 @@
  * どこにも送信されません。ネットワーク通信は一切行いません。
  */
 
+// 画面に出す版。直したはずの動きが変わらないとき、スマホが古いものを
+// 掴んでいるのか、直し方が足りないのかを切り分けるために使う。
+const APP_VERSION = "2026-08-27b";
+
 const STORAGE_KEY = "greenDays.v1";
 const SNAPSHOT_KEY = "greenDays.snapshots.v1";
 const BACKUP_META_KEY = "greenDays.backupMeta.v1";
@@ -1937,10 +1941,40 @@ function renderSettings() {
     );
   }
 
+  document.getElementById("status-version").textContent = APP_VERSION;
+
   renderSnapshotList();
   updatePersistStatus();
   renderLockSettings();
 }
+
+/**
+ * 端末が覚えている古いアプリ本体を捨てて読み込み直す。
+ * 消すのはキャッシュと Service Worker だけで、localStorage には触らない。
+ */
+document.getElementById("btn-force-update").addEventListener("click", async () => {
+  if (!confirm("最新の状態に読み込み直します。\n\n売上や在庫のデータは消えません。よろしいですか？")) return;
+
+  try {
+    if (window.caches) {
+      const keys = await caches.keys();
+      await Promise.all(
+        keys.filter((k) => k.startsWith("greendays-cache-")).map((k) => caches.delete(k))
+      );
+    }
+    if (navigator.serviceWorker) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    }
+  } catch (e) {
+    console.warn("キャッシュの削除に失敗しました", e);
+  }
+
+  // 同じURLだと端末が再び古いものを出すことがあるので、印を付けて読み直す
+  const url = new URL(location.href);
+  url.searchParams.set("v", Date.now().toString(36));
+  location.replace(url.toString());
+});
 
 function renderSnapshotList() {
   const list = loadSnapshots();

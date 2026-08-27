@@ -347,8 +347,24 @@
             <span>保存の安全性</span>
             <b id="status-persist">確認中…</b>
           </div>
+          <div class="status-item">
+            <span>アプリのバージョン</span>
+            <b id="status-version">—</b>
+          </div>
         </div>
         <p id="persist-hint" class="note" hidden></p>
+      </div>
+
+      <div class="card">
+        <h2>アプリを最新にする</h2>
+        <p class="note">
+          直したはずの動きが変わらないときに使います。スマホが古い状態を
+          覚えていることがあるため、それを捨てて読み込み直します。
+          <b>売上や在庫のデータは消えません。</b>
+        </p>
+        <button type="button" id="btn-force-update" class="btn btn-secondary">
+          最新の状態に読み込み直す
+        </button>
       </div>
 
       <div class="card">
