@@ -247,6 +247,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--green-500);
 }
 .warn-note b { color: #7a4f00; }
 
+#home-main { display: flex; flex-direction: column; gap: 12px; }
+
 /* ---- アプリのロック ---- */
 .lock-screen {
   position: fixed;

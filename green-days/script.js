@@ -372,6 +372,13 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
 
 function renderHome() {
   updateBackupBanner();
+
+  // 空のときに ¥0 だけを並べると、新規なのかデータを見失ったのか区別がつかない
+  const isEmpty = totalRecordCount() === 0;
+  document.getElementById("empty-state").hidden = !isEmpty;
+  document.getElementById("home-main").hidden = isEmpty;
+  if (isEmpty) return;
+
   const today = todayStr();
   const monthPrefix = today.slice(0, 7); // YYYY-MM
 
@@ -1523,7 +1530,7 @@ document.getElementById("btn-banner-backup").addEventListener("click", () => {
   else downloadBackup();
 });
 
-document.getElementById("import-file").addEventListener("change", (e) => {
+function handleBackupFileChosen(e) {
   const file = e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
@@ -1555,7 +1562,11 @@ document.getElementById("import-file").addEventListener("change", (e) => {
     }
   };
   reader.readAsText(file);
-});
+}
+
+// 設定からも、データが空のときのホーム画面からも同じ復元ができる
+document.getElementById("import-file").addEventListener("change", handleBackupFileChosen);
+document.getElementById("empty-import-file").addEventListener("change", handleBackupFileChosen);
 
 document.getElementById("btn-reset").addEventListener("click", () => {
   if (!confirm("すべてのデータを削除します。よろしいですか？\n\n（削除の直前の状態は復元ポイントに残ります）")) return;

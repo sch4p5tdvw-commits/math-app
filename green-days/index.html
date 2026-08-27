@@ -47,6 +47,25 @@
         </div>
         <button type="button" id="btn-banner-backup" class="btn btn-primary btn-compact">今すぐ</button>
       </div>
+
+      <div id="empty-state" class="card" hidden>
+        <h2>まだデータがありません</h2>
+        <p class="note warn-note">
+          <b>以前このアプリに入れたはずのデータが見えない場合</b>、開き方が変わった可能性があります。
+          Safariで開いたときと、ホーム画面のアイコンから開いたときとでは、
+          iPhoneがデータを<b>別々の場所に保存する</b>ことがあります。
+          もう一方の開き方を試すと、データがそのまま残っていることがあります。
+        </p>
+        <p class="note">
+          いずれの場合も、書き出しておいたバックアップファイルからいつでも戻せます。
+        </p>
+        <label class="btn btn-primary file-btn">
+          バックアップから復元する
+          <input type="file" id="empty-import-file" accept="application/json,.json" hidden>
+        </label>
+      </div>
+
+      <div id="home-main">
       <div class="card summary-card">
         <h2>今日の売上</h2>
         <div class="big-number" id="home-today-total">¥0</div>
@@ -72,6 +91,7 @@
       <div class="card">
         <h2>最近の売上</h2>
         <div id="home-recent-sales" class="list"></div>
+      </div>
       </div>
     </section>
 
