@@ -83,7 +83,7 @@
       </div>
       <div class="card">
         <div class="card-head">
-          <h2>在庫アラート</h2>
+          <h2>在庫切れ・売り越し</h2>
           <span class="badge" id="home-low-stock-badge">0</span>
         </div>
         <div id="home-low-stock-list" class="list"></div>
@@ -205,6 +205,17 @@
         <div class="chiprow" id="stock-store-chips"></div>
         <div id="product-list" class="list"></div>
       </div>
+
+      <div class="card">
+        <h2>在庫をリセット</h2>
+        <p class="note">
+          棚卸しなどで、在庫をまとめて0にします。売上や出荷の記録は残ります。
+          実行の直前の状態は「設定」の復元ポイントに保存されるので、あとから戻せます。
+        </p>
+        <button type="button" id="btn-zero-stock" class="btn btn-danger">
+          在庫をすべて0にする
+        </button>
+      </div>
     </section>
 
     <!-- 出荷 -->
@@ -257,16 +268,10 @@
               「、」か「,」で区切ってください。
             </small>
           </label>
-          <div class="field-row">
-            <label class="field">
-              <span>販売価格（円）</span>
-              <input type="number" id="product-price" min="0" step="1" required>
-            </label>
-            <label class="field">
-              <span>在庫少アラートのしきい値</span>
-              <input type="number" id="product-low-stock" min="0" step="1" value="5" required>
-            </label>
-          </div>
+          <label class="field">
+            <span>販売価格（円）</span>
+            <input type="number" id="product-price" min="0" step="1" required>
+          </label>
           <div class="field">
             <span>店舗ごとの在庫数</span>
             <div id="product-stock-rows" class="stock-rows"></div>
@@ -351,6 +356,13 @@
       <div class="card">
         <h2>店舗別ランキング</h2>
         <div id="report-store-ranking" class="list"></div>
+      </div>
+      <div class="card">
+        <h2>販売率</h2>
+        <p class="note" id="sellthrough-note">
+          出荷したもののうち、どれだけ売れたかです。
+        </p>
+        <div id="report-sellthrough" class="list"></div>
       </div>
     </section>
 

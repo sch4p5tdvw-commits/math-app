@@ -8,7 +8,7 @@
 
 // 画面に出す版。直したはずの動きが変わらないとき、スマホが古いものを
 // 掴んでいるのか、直し方が足りないのかを切り分けるために使う。
-const APP_VERSION = "2026-08-27c";
+const APP_VERSION = "2026-08-27d";
 
 const STORAGE_KEY = "greenDays.v1";
 const SNAPSHOT_KEY = "greenDays.snapshots.v1";
@@ -122,7 +122,7 @@ function totalStock(product) {
 }
 
 /**
- * しきい値を下回っている 店舗×商品。
+ * 在庫が尽きた 店舗×商品。0以下、つまり売り切れか売り越しだけを拾う。
  * その店舗で扱ったことのある商品だけを対象にする。すべての組み合わせを
  * 見ると、置いていない商品が在庫0として大量に並んでしまうため。
  */
@@ -132,7 +132,7 @@ function lowStockEntries() {
     db.stores.forEach((store) => {
       if (!product.stockByStore || !Object.prototype.hasOwnProperty.call(product.stockByStore, store.id)) return;
       const qty = getStock(product, store.id);
-      if (qty <= product.lowStock) out.push({ product, store, qty });
+      if (qty <= 0) out.push({ product, store, qty });
     });
   });
   return out;
@@ -407,13 +407,13 @@ function renderHome() {
   const lowStockList = document.getElementById("home-low-stock-list");
   lowStockList.innerHTML = "";
   if (lowStock.length === 0) {
-    lowStockList.innerHTML = `<div class="list-empty">在庫少の商品はありません</div>`;
+    lowStockList.innerHTML = `<div class="list-empty">在庫切れの商品はありません</div>`;
   } else {
     lowStock.forEach((entry) => {
       lowStockList.appendChild(
         buildListItem({
           title: `${entry.store.name}　${entry.product.name}`,
-          sub: `しきい値 ${entry.product.lowStock}`,
+          sub: entry.qty < 0 ? "売り越し" : "売り切れ",
           value: `残り ${entry.qty}`,
           low: true,
           onClick: () => openProductForm(entry.product.id),
@@ -625,6 +625,11 @@ let stockStoreFilter = "";
 function renderStockList() {
   renderStockStoreChips();
 
+  const filterStore = stockStoreFilter ? findStore(stockStoreFilter) : null;
+  document.getElementById("btn-zero-stock").textContent = filterStore
+    ? `${filterStore.name}の在庫をすべて0にする`
+    : "在庫をすべて0にする";
+
   const list = document.getElementById("product-list");
   list.innerHTML = "";
   if (db.products.length === 0) {
@@ -648,12 +653,55 @@ function renderStockList() {
           title: p.name,
           sub,
           value: store ? `在庫 ${qty}` : `合計 ${qty}`,
-          low: store ? qty <= p.lowStock : false,
+          low: store ? qty <= 0 : false,
           onClick: () => openProductForm(p.id),
         })
       );
     });
 }
+
+/**
+ * 在庫をまとめて0にする。表示中の店舗だけが対象なので、
+ * ボタンの文言も「どこを0にするのか」に合わせて変える。
+ */
+document.getElementById("btn-zero-stock").addEventListener("click", () => {
+  const store = stockStoreFilter ? findStore(stockStoreFilter) : null;
+  const target = store ? store.name : "すべての店舗";
+
+  // 0でない在庫だけ数える。何件が動くのかを見てから決められるように
+  let affected = 0;
+  db.products.forEach((p) => {
+    Object.keys(p.stockByStore || {}).forEach((storeId) => {
+      if (store && storeId !== store.id) return;
+      if (getStock(p, storeId) !== 0) affected += 1;
+    });
+  });
+
+  if (affected === 0) {
+    showToast("0にする在庫がありません");
+    return;
+  }
+
+  const message =
+    `${target}の在庫を、ほんとうにすべて0にしますか？\n\n` +
+    `${affected}件の在庫が0になります。\n` +
+    `売上と出荷の記録は残ります。\n\n` +
+    `実行の直前の状態は復元ポイントに保存されるので、あとから戻せます。`;
+  if (!confirm(message)) return;
+
+  takeSnapshot(store ? `${store.name}の在庫を0にする直前` : "在庫を0にする直前");
+
+  db.products.forEach((p) => {
+    Object.keys(p.stockByStore || {}).forEach((storeId) => {
+      if (store && storeId !== store.id) return;
+      p.stockByStore[storeId] = 0;
+    });
+  });
+
+  saveDB();
+  showToast(`${target}の在庫を0にしました`);
+  renderStockList();
+});
 
 function renderStockStoreChips() {
   const row = document.getElementById("stock-store-chips");
@@ -691,7 +739,6 @@ function openProductForm(id) {
   document.getElementById("product-aliases").value =
     product && Array.isArray(product.aliases) ? product.aliases.join("、") : "";
   document.getElementById("product-price").value = product ? product.price : "";
-  document.getElementById("product-low-stock").value = product ? product.lowStock : 5;
   document.getElementById("btn-product-delete").hidden = !product;
   renderProductStockRows(product);
 
@@ -747,7 +794,6 @@ document.getElementById("product-form").addEventListener("submit", (e) => {
   const category = document.getElementById("product-category").value.trim();
   const aliases = parseAliasInput(document.getElementById("product-aliases").value);
   const price = Number(document.getElementById("product-price").value);
-  const lowStock = Number(document.getElementById("product-low-stock").value);
 
   if (!name) {
     showToast("商品名を入力してください");
@@ -779,7 +825,6 @@ document.getElementById("product-form").addEventListener("submit", (e) => {
     product.category = category;
     product.aliases = aliases;
     product.price = price;
-    product.lowStock = lowStock;
     product.stockByStore = stockByStore;
   } else {
     db.products.push({
@@ -788,7 +833,6 @@ document.getElementById("product-form").addEventListener("submit", (e) => {
       category,
       aliases,
       price,
-      lowStock,
       stockByStore,
       createdAt: Date.now(),
     });
@@ -1867,6 +1911,82 @@ function renderReport() {
     const storeRanking = [...byStore.values()].sort((a, b) => b.total - a.total);
     renderRanking(storeRankingEl, storeRanking, storeRanking.length ? storeRanking[0].total : 0);
   }
+
+  renderSellThrough();
+}
+
+/**
+ * 販売率＝出荷したもののうち売れた割合。
+ *
+ * 期間で絞らず、出荷を記録しはじめた日からの累計で出す。出荷より前の
+ * 売上まで数えると出荷を上回ってしまい、短い期間で切ると先週出したものが
+ * 今週売れた分を取りこぼすため、どちらも意味のある数字にならない。
+ */
+function renderSellThrough() {
+  const container = document.getElementById("report-sellthrough");
+  const note = document.getElementById("sellthrough-note");
+  container.innerHTML = "";
+
+  const shipments = db.restocks.filter(
+    (r) => r.type === "in" && (!reportStoreFilter || r.storeId === reportStoreFilter)
+  );
+  if (shipments.length === 0) {
+    note.textContent = "出荷の記録がないため、まだ計算できません。";
+    container.innerHTML = `<div class="list-empty">出荷を記録すると表示されます</div>`;
+    return;
+  }
+
+  const from = shipments.reduce((min, r) => (r.date < min ? r.date : min), shipments[0].date);
+  note.textContent =
+    `出荷したもののうち、どれだけ売れたかです。` +
+    `出荷を記録しはじめた ${from} からの累計で計算しています。`;
+
+  const rows = new Map();
+  const entry = (product) => {
+    if (!rows.has(product.id)) rows.set(product.id, { name: product.name, shipped: 0, sold: 0 });
+    return rows.get(product.id);
+  };
+
+  shipments.forEach((r) => {
+    const product = findProduct(r.productId);
+    if (product) entry(product).shipped += r.qty;
+  });
+  db.sales.forEach((s) => {
+    if (s.date < from) return;
+    if (reportStoreFilter && s.storeId !== reportStoreFilter) return;
+    const product = findProduct(s.productId);
+    if (product) entry(product).sold += s.qty;
+  });
+
+  const list = [...rows.values()]
+    .filter((r) => r.shipped > 0)
+    .map((r) => ({ ...r, rate: r.sold / r.shipped, left: r.shipped - r.sold }))
+    .sort((a, b) => b.rate - a.rate);
+
+  if (list.length === 0) {
+    container.innerHTML = `<div class="list-empty">この店舗の出荷記録がありません</div>`;
+    return;
+  }
+
+  list.forEach((r) => {
+    const row = document.createElement("div");
+    row.className = "list-item";
+    const pct = Math.round(r.rate * 100);
+    // 100%を超える分は棒からはみ出させず、数字で見せる
+    const width = Math.max(4, Math.min(100, pct));
+    row.innerHTML = `
+      <div class="rank-row" style="width:100%">
+        <div class="rank-bar-wrap">
+          <div class="sellthrough-head">
+            <span class="list-item-title">${escapeHtml(r.name)}</span>
+            <span class="sellthrough-rate${pct >= 100 ? " full" : ""}">${pct}%</span>
+          </div>
+          <div class="list-item-sub">出荷 ${r.shipped} ／ 売上 ${r.sold} ／ 残り ${r.left}</div>
+          <div class="rank-bar-track"><div class="rank-bar-fill" style="width:${width}%"></div></div>
+        </div>
+      </div>`;
+    container.appendChild(row);
+  });
 }
 
 function renderRanking(container, entries, maxTotal) {
@@ -1900,10 +2020,21 @@ function escapeHtml(str) {
 
 // ---------- 履歴 ----------
 
+/**
+ * 売った日の新しい順。入力した順ではないので、あとから前の日の分を
+ * 入れても正しい位置に入る。同じ日の中では入力の新しいほうを上にする。
+ */
+function byDateNewestFirst(a, b) {
+  const da = a.date || "";
+  const dbb = b.date || "";
+  if (da !== dbb) return da < dbb ? 1 : -1;
+  return (b.createdAt || 0) - (a.createdAt || 0);
+}
+
 function renderHistory() {
   const salesList = document.getElementById("history-sales-list");
   salesList.innerHTML = "";
-  const sortedSales = [...db.sales].sort((a, b) => b.createdAt - a.createdAt);
+  const sortedSales = [...db.sales].sort(byDateNewestFirst);
   if (sortedSales.length === 0) {
     salesList.innerHTML = `<div class="list-empty">まだ売上の記録がありません</div>`;
   } else {
@@ -1921,7 +2052,7 @@ function renderHistory() {
 
   const restockList = document.getElementById("history-restock-list");
   restockList.innerHTML = "";
-  const sortedRestocks = [...db.restocks].sort((a, b) => b.createdAt - a.createdAt);
+  const sortedRestocks = [...db.restocks].sort(byDateNewestFirst);
   if (sortedRestocks.length === 0) {
     restockList.innerHTML = `<div class="list-empty">まだ入荷・棚卸しの記録がありません</div>`;
   } else {
