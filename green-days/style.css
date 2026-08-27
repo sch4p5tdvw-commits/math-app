@@ -635,6 +635,20 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--green-500);
   overflow: hidden;
   margin-top: 4px;
 }
+.sellthrough-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sellthrough-rate {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--green-700);
+  white-space: nowrap;
+}
+.sellthrough-rate.full { color: #b26a00; }
+
 .rank-bar-fill {
   height: 100%;
   background: var(--green-500);
