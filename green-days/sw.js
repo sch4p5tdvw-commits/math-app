@@ -1,4 +1,4 @@
-const CACHE_NAME = "greendays-cache-v2";
+const CACHE_NAME = "greendays-cache-v3";
 const ASSETS = [
   "./",
   "./index.html",

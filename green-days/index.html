@@ -190,12 +190,48 @@
     <!-- 在庫管理 -->
     <section id="screen-stock" class="screen" hidden>
       <div class="card">
+        <h2>出荷</h2>
+        <p class="note">商品を選ぶと、店舗ごとの数量をまとめて入力できます。</p>
+        <button type="button" id="btn-open-shipment" class="btn btn-primary btn-big">
+          出荷を記録する
+        </button>
+      </div>
+
+      <div class="card">
         <div class="card-head">
           <h2>商品・在庫一覧</h2>
           <button type="button" id="btn-new-product" class="btn btn-secondary btn-compact">＋ 商品追加</button>
         </div>
         <div class="chiprow" id="stock-store-chips"></div>
         <div id="product-list" class="list"></div>
+      </div>
+    </section>
+
+    <!-- 出荷 -->
+    <section id="screen-shipment" class="screen" hidden>
+      <div class="card" id="shipment-pick-card">
+        <h2>どの商品を出荷しますか？</h2>
+        <p class="note">最近出荷したものが上に出ます。</p>
+        <div id="shipment-product-list" class="ship-products"></div>
+        <button type="button" id="btn-shipment-back" class="btn btn-secondary">もどる</button>
+      </div>
+
+      <div class="card" id="shipment-qty-card" hidden>
+        <div class="card-head">
+          <h2 id="shipment-product-name">—</h2>
+          <button type="button" id="btn-shipment-change" class="btn btn-secondary btn-compact">
+            商品を変える
+          </button>
+        </div>
+        <label class="field">
+          <span>出荷日</span>
+          <input type="date" id="shipment-date" required>
+        </label>
+        <div id="shipment-store-rows" class="ship-stores"></div>
+        <div class="sale-total-preview">出荷合計: <strong id="shipment-total">0点</strong></div>
+        <button type="button" id="btn-shipment-commit" class="btn btn-primary btn-big">
+          出荷を記録する
+        </button>
       </div>
     </section>
 
