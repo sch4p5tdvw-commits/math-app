@@ -6,6 +6,10 @@
  * どこにも送信されません。ネットワーク通信は一切行いません。
  */
 
+// 画面に出す版。直したはずの動きが変わらないとき、スマホが古いものを
+// 掴んでいるのか、直し方が足りないのかを切り分けるために使う。
+const APP_VERSION = "2026-08-27c";
+
 const STORAGE_KEY = "greenDays.v1";
 const SNAPSHOT_KEY = "greenDays.snapshots.v1";
 const BACKUP_META_KEY = "greenDays.backupMeta.v1";
@@ -343,14 +347,17 @@ function showToast(msg) {
 
 // ---------- 画面切り替え ----------
 
-const SCREENS = ["home", "sale", "stock", "report", "history", "settings", "product-form", "import"];
+const SCREENS = [
+  "home", "sale", "stock", "report", "history", "settings",
+  "product-form", "import", "shipment",
+];
 
 function showScreen(name, opts = {}) {
   SCREENS.forEach((s) => {
     const el = document.getElementById(`screen-${s}`);
     if (el) el.hidden = s !== name;
   });
-  const SUB_SCREEN_TABS = { "product-form": "stock", import: "sale" };
+  const SUB_SCREEN_TABS = { "product-form": "stock", import: "sale", shipment: "stock" };
   const activeTab = opts.activeTab || SUB_SCREEN_TABS[name] || name;
   document.querySelectorAll(".tab-btn").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.screen === activeTab);
@@ -363,6 +370,7 @@ function showScreen(name, opts = {}) {
   if (name === "report") renderReport();
   if (name === "history") renderHistory();
   if (name === "settings") renderSettings();
+  if (name === "shipment") renderShipment();
 }
 
 document.querySelectorAll(".tab-btn").forEach((btn) => {
@@ -599,8 +607,14 @@ document.getElementById("sale-form").addEventListener("submit", (e) => {
   });
   addStock(product, store.id, -qty);
   saveDB();
-  showToast("売上を記録しました");
-  showScreen("home");
+  showToast("売上を記録しました。続けて入力できます");
+
+  // 同じ店舗・日付のまま次を入力できるよう、数量とメモだけ戻す
+  document.getElementById("sale-qty").value = "1";
+  document.getElementById("sale-memo").value = "";
+  renderSaleProductOptions();
+  syncSalePriceFromProduct();
+  updateSalePreview();
 });
 
 // ---------- 在庫・商品管理 ----------
@@ -1469,10 +1483,258 @@ document.getElementById("btn-import-commit").addEventListener("click", () => {
 
   saveDB();
   importRows = [];
-  document.getElementById("import-text").value = "";
+  // 店舗ごとにお知らせが届くので、登録したらそのまま次を貼れるようにしておく
+  const textarea = document.getElementById("import-text");
+  textarea.value = "";
   document.getElementById("import-result-card").hidden = true;
-  showToast(`${selected.length}件を登録しました`);
-  showScreen("home");
+  showToast(`${selected.length}件を登録しました。続けて貼り付けられます`);
+  textarea.scrollIntoView({ block: "center" });
+});
+
+// ---------- 出荷 ----------
+//
+// 出荷は「ひとつの商品を何店舗かへ配る」という動きなので、
+// 商品を選んでから店舗ごとの数量をまとめて入れる形にしている。
+
+/** 選択中の商品と、店舗ごとの出荷数 */
+let shipmentProductId = "";
+let shipmentQty = {};
+
+/** 数量の選択肢。実際の出荷は5〜20点が多いので、そこを押しやすくしている */
+const SHIP_CHOICES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 15, 16, 18, 20, 24, 30];
+
+/** 最近出荷したものを先に並べる */
+function productsByRecentShipment() {
+  const lastShipped = new Map();
+  db.restocks.forEach((r) => {
+    if (r.type !== "in") return;
+    if ((lastShipped.get(r.productId) || 0) < r.createdAt) {
+      lastShipped.set(r.productId, r.createdAt);
+    }
+  });
+  return [...db.products].sort((a, b) => {
+    const la = lastShipped.get(a.id) || 0;
+    const lb = lastShipped.get(b.id) || 0;
+    if (la !== lb) return lb - la;
+    return a.name.localeCompare(b.name, "ja");
+  });
+}
+
+document.getElementById("btn-open-shipment").addEventListener("click", () => {
+  if (db.products.length === 0) {
+    showToast("先に商品を登録してください");
+    return;
+  }
+  if (db.stores.length === 0) {
+    showToast("先に「設定」タブで店舗を登録してください");
+    return;
+  }
+  shipmentProductId = "";
+  shipmentQty = {};
+  showScreen("shipment");
+});
+
+document.getElementById("btn-shipment-back").addEventListener("click", () => showScreen("stock"));
+document.getElementById("btn-shipment-change").addEventListener("click", () => {
+  shipmentProductId = "";
+  shipmentQty = {};
+  renderShipment();
+});
+
+function renderShipment() {
+  const picking = !shipmentProductId;
+  document.getElementById("shipment-pick-card").hidden = !picking;
+  document.getElementById("shipment-qty-card").hidden = picking;
+  if (picking) renderShipmentProducts();
+  else renderShipmentStores();
+}
+
+function renderShipmentProducts() {
+  const list = document.getElementById("shipment-product-list");
+  list.innerHTML = "";
+
+  const lastShipped = new Map();
+  db.restocks.forEach((r) => {
+    if (r.type !== "in") return;
+    if ((lastShipped.get(r.productId) || 0) < r.createdAt) {
+      lastShipped.set(r.productId, r.createdAt);
+    }
+  });
+
+  productsByRecentShipment().forEach((product) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ship-product";
+
+    const name = document.createElement("div");
+    name.className = "ship-product-name";
+    name.textContent = product.name;
+    button.appendChild(name);
+
+    const sub = document.createElement("div");
+    sub.className = "ship-product-sub";
+    const at = lastShipped.get(product.id);
+    sub.textContent = at
+      ? `前回 ${toDateStr(new Date(at))}・在庫 ${totalStock(product)}`
+      : `出荷なし・在庫 ${totalStock(product)}`;
+    button.appendChild(sub);
+
+    button.addEventListener("click", () => {
+      shipmentProductId = product.id;
+      shipmentQty = {};
+      document.getElementById("shipment-date").value = todayStr();
+      renderShipment();
+    });
+
+    list.appendChild(button);
+  });
+}
+
+function renderShipmentStores() {
+  const product = findProduct(shipmentProductId);
+  if (!product) {
+    shipmentProductId = "";
+    renderShipment();
+    return;
+  }
+  document.getElementById("shipment-product-name").textContent = product.name;
+
+  const container = document.getElementById("shipment-store-rows");
+  container.innerHTML = "";
+  db.stores.forEach((store) => container.appendChild(buildShipmentStoreRow(store)));
+  updateShipmentTotal();
+}
+
+/**
+ * 店舗1行分。数字を選んだときは作り直さずその場で塗り替える。
+ * 作り直すと横スクロールが先頭に戻り、いま選んだ数字が画面の外へ消えてしまう。
+ */
+function buildShipmentStoreRow(store) {
+  const qty = Number(shipmentQty[store.id]) || 0;
+
+  const row = document.createElement("div");
+  row.className = "ship-store" + (qty > 0 ? " has-qty" : "");
+
+  const head = document.createElement("div");
+  head.className = "ship-store-head";
+  const name = document.createElement("span");
+  name.className = "ship-store-name";
+  name.textContent = store.name;
+  head.appendChild(name);
+  const qtyLabel = document.createElement("span");
+  qtyLabel.className = "ship-store-qty" + (qty > 0 ? "" : " zero");
+  qtyLabel.textContent = qty > 0 ? `${qty}点` : "なし";
+  head.appendChild(qtyLabel);
+  row.appendChild(head);
+
+  const chips = document.createElement("div");
+  chips.className = "ship-chips";
+
+  // 一覧にない数量を選んだあとも、その数字を押せる位置に残す
+  const choices = qty > 0 && !SHIP_CHOICES.includes(qty)
+    ? [...SHIP_CHOICES, qty].sort((a, b) => a - b)
+    : SHIP_CHOICES;
+
+  const select = (value) => {
+    shipmentQty[store.id] = value;
+    chips.querySelectorAll(".ship-chip").forEach((c) => {
+      c.classList.toggle("active", c.dataset.value === String(value));
+    });
+    row.classList.toggle("has-qty", value > 0);
+    qtyLabel.textContent = value > 0 ? `${value}点` : "なし";
+    qtyLabel.classList.toggle("zero", value === 0);
+    updateShipmentTotal();
+  };
+
+  choices.forEach((value) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "ship-chip" + (value === qty ? " active" : "");
+    chip.dataset.value = String(value);
+    chip.textContent = String(value);
+    chip.addEventListener("click", () => select(value));
+    chips.appendChild(chip);
+  });
+
+  const more = document.createElement("button");
+  more.type = "button";
+  more.className = "ship-chip more";
+  more.textContent = "その他";
+  more.addEventListener("click", () => {
+    const input = prompt(`${store.name} の出荷数`, String(Number(shipmentQty[store.id]) || 0));
+    if (input === null) return;
+    const value = Math.floor(Number(String(input).trim()));
+    if (!Number.isFinite(value) || value < 0) {
+      showToast("数量を正しく入力してください");
+      return;
+    }
+    shipmentQty[store.id] = value;
+    // 選択肢が増えるのでこの行だけ作り直す
+    row.replaceWith(buildShipmentStoreRow(store));
+    updateShipmentTotal();
+  });
+  chips.appendChild(more);
+
+  row.appendChild(chips);
+
+  // 選択済みの数字が画面の外にあると、入れたのかどうか分からなくなる
+  if (qty > 0) {
+    requestAnimationFrame(() => {
+      const active = chips.querySelector(".ship-chip.active");
+      if (active) chips.scrollLeft = active.offsetLeft - chips.clientWidth / 2 + active.offsetWidth / 2;
+    });
+  }
+
+  return row;
+}
+
+function updateShipmentTotal() {
+  const total = db.stores.reduce((sum, s) => sum + (Number(shipmentQty[s.id]) || 0), 0);
+  document.getElementById("shipment-total").textContent = `${total}点`;
+}
+
+document.getElementById("btn-shipment-commit").addEventListener("click", () => {
+  const product = findProduct(shipmentProductId);
+  if (!product) return;
+
+  const date = document.getElementById("shipment-date").value || todayStr();
+  const entries = db.stores
+    .map((store) => ({ store, qty: Number(shipmentQty[store.id]) || 0 }))
+    .filter((e) => e.qty > 0);
+
+  if (entries.length === 0) {
+    showToast("出荷する数量を選んでください");
+    return;
+  }
+
+  const summary = entries.map((e) => `${e.store.name} ${e.qty}点`).join("\n");
+  if (!confirm(`${product.name} を出荷します。\n\n${summary}\n\nよろしいですか？`)) return;
+
+  const now = Date.now();
+  entries.forEach((entry, i) => {
+    db.restocks.push({
+      id: uid(),
+      storeId: entry.store.id,
+      storeName: entry.store.name,
+      productId: product.id,
+      productName: product.name,
+      type: "in",
+      qty: entry.qty,
+      date,
+      memo: "出荷",
+      createdAt: now + i,
+    });
+    addStock(product, entry.store.id, entry.qty);
+  });
+
+  saveDB();
+  const total = entries.reduce((sum, e) => sum + e.qty, 0);
+  showToast(`${product.name} を ${entries.length}店舗・計${total}点 出荷しました`);
+
+  // 続けて別の商品を出荷できるよう、商品選びに戻す
+  shipmentProductId = "";
+  shipmentQty = {};
+  renderShipment();
 });
 
 // ---------- 集計 ----------
@@ -1937,10 +2199,40 @@ function renderSettings() {
     );
   }
 
+  document.getElementById("status-version").textContent = APP_VERSION;
+
   renderSnapshotList();
   updatePersistStatus();
   renderLockSettings();
 }
+
+/**
+ * 端末が覚えている古いアプリ本体を捨てて読み込み直す。
+ * 消すのはキャッシュと Service Worker だけで、localStorage には触らない。
+ */
+document.getElementById("btn-force-update").addEventListener("click", async () => {
+  if (!confirm("最新の状態に読み込み直します。\n\n売上や在庫のデータは消えません。よろしいですか？")) return;
+
+  try {
+    if (window.caches) {
+      const keys = await caches.keys();
+      await Promise.all(
+        keys.filter((k) => k.startsWith("greendays-cache-")).map((k) => caches.delete(k))
+      );
+    }
+    if (navigator.serviceWorker) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    }
+  } catch (e) {
+    console.warn("キャッシュの削除に失敗しました", e);
+  }
+
+  // 同じURLだと端末が再び古いものを出すことがあるので、印を付けて読み直す
+  const url = new URL(location.href);
+  url.searchParams.set("v", Date.now().toString(36));
+  location.replace(url.toString());
+});
 
 function renderSnapshotList() {
   const list = loadSnapshots();

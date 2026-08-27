@@ -251,6 +251,76 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--green-500);
 
 .btn-big { padding: 16px; font-size: 16px; }
 
+/* ---- 出荷 ---- */
+.ship-products {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.ship-product {
+  border: 1px solid var(--border);
+  background: var(--green-100);
+  border-radius: 12px;
+  padding: 14px 12px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ship-product:active { background: #d9ecd8; }
+.ship-product-name { font-size: 15px; font-weight: 800; color: var(--green-900); }
+.ship-product-sub { font-size: 11.5px; color: var(--ink-soft); }
+
+.ship-stores { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+
+.ship-store {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+}
+.ship-store.has-qty { border-color: var(--green-500); background: var(--green-100); }
+
+.ship-store-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.ship-store-name { font-size: 14px; font-weight: 800; color: var(--green-900); }
+.ship-store-qty { font-size: 13px; font-weight: 800; color: var(--green-700); }
+.ship-store-qty.zero { color: var(--ink-soft); font-weight: 400; }
+
+/* 数字は横に流して選ぶ。スマホで指が届く大きさを保つため折り返さない */
+.ship-chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+.ship-chip {
+  flex: 0 0 auto;
+  min-width: 40px;
+  padding: 9px 0;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+}
+.ship-chip.active {
+  background: var(--green-600);
+  border-color: var(--green-600);
+  color: #fff;
+}
+.ship-chip.more { min-width: 52px; font-size: 12.5px; }
+
 .field-hint {
   font-size: 11.5px;
   color: var(--ink-soft);
