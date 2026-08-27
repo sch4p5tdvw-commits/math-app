@@ -9,9 +9,12 @@
 const STORAGE_KEY = "greenDays.v1";
 const SNAPSHOT_KEY = "greenDays.snapshots.v1";
 const BACKUP_META_KEY = "greenDays.backupMeta.v1";
+const CHANGE_COUNT_KEY = "greenDays.changeCount.v1";
 
 const MAX_SNAPSHOTS = 5;
 const BACKUP_REMINDER_DAYS = 7;
+// 日数だけを見ていると、短期間にたくさん入力した分が催促されないまま残る
+const BACKUP_REMINDER_RECORDS = 20;
 
 /** @type {{products: Array, sales: Array, restocks: Array}} */
 let db = loadDB();
@@ -150,9 +153,21 @@ function fillStoreSelect(select, selectedId) {
   });
 }
 
+/**
+ * 保存のたびに増える通し番号。バックアップ時の値と比べることで
+ * 「書き出したあと何回変えたか」が分かる。件数の差だけを見ていると、
+ * 足した数と消した数が同じときに変更が無かったことになってしまう。
+ */
+let changeCounter = (() => {
+  const raw = Number(localStorage.getItem(CHANGE_COUNT_KEY));
+  return Number.isFinite(raw) ? raw : 0;
+})();
+
 function saveDB() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+    changeCounter += 1;
+    localStorage.setItem(CHANGE_COUNT_KEY, String(changeCounter));
   } catch (e) {
     // 保存できないまま操作を続けると、記録したつもりのものが消える。
     // 黙って失敗させず、必ず知らせて書き出しを促す。
@@ -233,11 +248,12 @@ function maybeAutoSnapshot() {
 // ---------- バックアップの記録 ----------
 
 function loadBackupMeta() {
+  const fallback = { at: null, recordCount: 0, changeCount: 0 };
   try {
     const raw = localStorage.getItem(BACKUP_META_KEY);
-    return raw ? JSON.parse(raw) : { at: null, recordCount: 0 };
+    return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
   } catch (e) {
-    return { at: null, recordCount: 0 };
+    return fallback;
   }
 }
 
@@ -245,7 +261,11 @@ function markBackedUp() {
   try {
     localStorage.setItem(
       BACKUP_META_KEY,
-      JSON.stringify({ at: Date.now(), recordCount: totalRecordCount() })
+      JSON.stringify({
+        at: Date.now(),
+        recordCount: totalRecordCount(),
+        changeCount: changeCounter,
+      })
     );
   } catch (e) {
     console.warn("バックアップ日時を記録できませんでした", e);
@@ -269,8 +289,8 @@ function updateBackupBanner() {
     banner.hidden = true;
     return;
   }
-  // 前回のバックアップ以降に増減がなければ催促しない
-  if (meta.at && meta.recordCount === count) {
+  // 書き出したあと一度も変えていなければ催促しない
+  if (meta.at && pendingChanges(meta) === 0) {
     banner.hidden = true;
     return;
   }
@@ -281,13 +301,30 @@ function updateBackupBanner() {
     detail.textContent = `まだ一度も書き出していません（${count}件の記録）`;
     return;
   }
+
   const days = daysSince(meta.at);
+  const added = count - meta.recordCount;
+  // 記録が増えているときはその件数を、そうでないときは変更があったことだけを伝える
+  const changeText = added > 0 ? `${added}件ふえています` : "変更があります";
+
+  // 日が経ったとき、あるいは短期間でも変更がたまったときに知らせる
   if (days >= BACKUP_REMINDER_DAYS) {
     banner.hidden = false;
-    detail.textContent = `前回から${days}日、${count - meta.recordCount}件ふえています`;
+    detail.textContent = `前回から${days}日、${changeText}`;
+    return;
+  }
+  if (pendingChanges(meta) >= BACKUP_REMINDER_RECORDS) {
+    banner.hidden = false;
+    detail.textContent =
+      days === 0 ? `前回の書き出しから${changeText}` : `前回から${days}日で${changeText}`;
     return;
   }
   banner.hidden = true;
+}
+
+/** 前回のバックアップ以降に保存された回数 */
+function pendingChanges(meta) {
+  return Math.max(0, changeCounter - (meta.changeCount || 0));
 }
 
 function findProduct(id) {
@@ -1644,9 +1681,13 @@ function renderSettings() {
   } else {
     const days = daysSince(meta.at);
     const d = new Date(meta.at);
-    lastEl.textContent =
-      days === 0 ? "今日" : days === 1 ? "昨日" : `${toDateStr(d)}（${days}日前）`;
-    lastEl.classList.toggle("warn", days >= BACKUP_REMINDER_DAYS);
+    const when = days === 0 ? "今日" : days === 1 ? "昨日" : `${toDateStr(d)}（${days}日前）`;
+    const pending = pendingChanges(meta);
+    lastEl.textContent = pending > 0 ? `${when}・その後${pending}回の変更` : when;
+    lastEl.classList.toggle(
+      "warn",
+      days >= BACKUP_REMINDER_DAYS || pending >= BACKUP_REMINDER_RECORDS
+    );
   }
 
   renderSnapshotList();
