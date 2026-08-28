@@ -703,3 +703,14 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--green-500);
 @media (min-width: 560px) {
   .app { border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
 }
+
+/* 修正の結果どうなるかを、保存する前にその場で見せる欄 */
+.record-edit-diff {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--green-100);
+  color: var(--green-900);
+  font-size: 13px;
+  line-height: 1.6;
+}
