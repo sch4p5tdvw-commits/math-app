@@ -8,7 +8,7 @@
 
 // 画面に出す版。直したはずの動きが変わらないとき、スマホが古いものを
 // 掴んでいるのか、直し方が足りないのかを切り分けるために使う。
-const APP_VERSION = "2026-08-27d";
+const APP_VERSION = "2026-08-27e";
 
 const STORAGE_KEY = "greenDays.v1";
 const SNAPSHOT_KEY = "greenDays.snapshots.v1";
@@ -2031,42 +2031,111 @@ function byDateNewestFirst(a, b) {
   return (b.createdAt || 0) - (a.createdAt || 0);
 }
 
-function renderHistory() {
-  const salesList = document.getElementById("history-sales-list");
-  salesList.innerHTML = "";
-  const sortedSales = [...db.sales].sort(byDateNewestFirst);
-  if (sortedSales.length === 0) {
-    salesList.innerHTML = `<div class="list-empty">まだ売上の記録がありません</div>`;
-  } else {
-    sortedSales.forEach((s) => {
-      salesList.appendChild(
-        buildListItem({
-          title: `${s.storeName || "―"}　${s.productName}`,
-          sub: `${s.date}・${s.qty}個${s.memo ? "・" + s.memo : ""}`,
-          value: formatYen(s.total),
-          onDelete: () => deleteSale(s.id),
-        })
-      );
+/** 履歴画面の状態。売上と出荷は数が違いすぎるので切り替えで見る */
+let historyKind = "sales";
+let historyStoreFilter = "";
+let historyLimit = 50;
+const HISTORY_PAGE = 50;
+
+document.querySelectorAll("#history-kind-chips .chip").forEach((chip) => {
+  chip.addEventListener("click", () => {
+    historyKind = chip.dataset.kind;
+    historyLimit = HISTORY_PAGE;
+    renderHistory();
+  });
+});
+
+document.getElementById("btn-history-more").addEventListener("click", () => {
+  historyLimit += HISTORY_PAGE;
+  renderHistory();
+});
+
+function renderHistoryStoreChips() {
+  const row = document.getElementById("history-store-chips");
+  row.innerHTML = "";
+  if (db.stores.length === 0) {
+    row.hidden = true;
+    return;
+  }
+  row.hidden = false;
+
+  const makeChip = (id, label) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "chip" + (historyStoreFilter === id ? " active" : "");
+    chip.textContent = label;
+    chip.addEventListener("click", () => {
+      historyStoreFilter = id;
+      historyLimit = HISTORY_PAGE;
+      renderHistory();
     });
+    row.appendChild(chip);
+  };
+
+  makeChip("", "全店");
+  db.stores.forEach((s) => makeChip(s.id, s.name));
+}
+
+function renderHistory() {
+  document.querySelectorAll("#history-kind-chips .chip").forEach((chip) => {
+    chip.classList.toggle("active", chip.dataset.kind === historyKind);
+  });
+  renderHistoryStoreChips();
+
+  const showingSales = historyKind === "sales";
+  document.getElementById("history-title").textContent = showingSales
+    ? "売上の履歴"
+    : "出荷・棚卸しの履歴";
+
+  const source = showingSales ? db.sales : db.restocks;
+  const rows = source
+    .filter((r) => !historyStoreFilter || r.storeId === historyStoreFilter)
+    .sort(byDateNewestFirst);
+
+  document.getElementById("history-count").textContent = String(rows.length);
+
+  const list = document.getElementById("history-list");
+  list.innerHTML = "";
+
+  if (rows.length === 0) {
+    list.innerHTML = `<div class="list-empty">${
+      showingSales ? "売上の記録がありません" : "出荷・棚卸しの記録がありません"
+    }</div>`;
+    document.getElementById("btn-history-more").hidden = true;
+    return;
   }
 
-  const restockList = document.getElementById("history-restock-list");
-  restockList.innerHTML = "";
-  const sortedRestocks = [...db.restocks].sort(byDateNewestFirst);
-  if (sortedRestocks.length === 0) {
-    restockList.innerHTML = `<div class="list-empty">まだ入荷・棚卸しの記録がありません</div>`;
-  } else {
-    sortedRestocks.forEach((r) => {
-      restockList.appendChild(
-        buildListItem({
-          title: `${r.storeName || "―"}　${r.productName}`,
-          sub: `${r.date}・${r.type === "in" ? "入荷" : "棚卸し"}${r.memo ? "・" + r.memo : ""}`,
-          value: r.type === "in" ? `+${r.qty}` : `→ ${r.qty}`,
-          onDelete: () => deleteRestock(r.id),
-        })
-      );
-    });
-  }
+  rows.slice(0, historyLimit).forEach((r) => {
+    list.appendChild(
+      showingSales ? buildSaleHistoryItem(r) : buildRestockHistoryItem(r)
+    );
+  });
+
+  const more = document.getElementById("btn-history-more");
+  const remaining = rows.length - Math.min(historyLimit, rows.length);
+  more.hidden = remaining === 0;
+  more.textContent = `さらに表示（あと${remaining}件）`;
+}
+
+function buildSaleHistoryItem(s) {
+  return buildListItem({
+    title: `${s.storeName || "―"}　${s.productName}`,
+    sub: `${s.date}・${s.qty}点${s.memo ? "・" + s.memo : ""}`,
+    value: formatYen(s.total),
+    onDelete: () => deleteSale(s.id),
+  });
+}
+
+function buildRestockHistoryItem(r) {
+  // 店に納めるので、こちらから見れば「出荷」。memo の "出荷" は重ねない
+  const kind = r.type === "in" ? "出荷" : "棚卸し";
+  const memo = r.memo && r.memo !== "出荷" ? `・${r.memo}` : "";
+  return buildListItem({
+    title: `${r.storeName || "―"}　${r.productName}`,
+    sub: `${r.date}・${kind}${memo}`,
+    value: r.type === "in" ? `+${r.qty}点` : `→ ${r.qty}点`,
+    onDelete: () => deleteRestock(r.id),
+  });
 }
 
 function deleteSale(id) {
@@ -2084,8 +2153,10 @@ function deleteSale(id) {
 function deleteRestock(id) {
   const restock = db.restocks.find((r) => r.id === id);
   if (!restock) return;
-  let msg = "この記録を削除しますか？";
-  if (restock.type === "in") msg += "在庫からその数量が引かれます。";
+  let msg =
+    restock.type === "in"
+      ? `${restock.storeName || ""} ${restock.productName} ${restock.qty}点の出荷を削除しますか？\n\n在庫からその数量が引かれます。`
+      : "この棚卸しの記録を削除しますか？\n\n在庫の数は戻りません。";
   if (!confirm(msg)) return;
   if (restock.type === "in") {
     const product = findProduct(restock.productId);
