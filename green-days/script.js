@@ -8,7 +8,7 @@
 
 // 画面に出す版。直したはずの動きが変わらないとき、スマホが古いものを
 // 掴んでいるのか、直し方が足りないのかを切り分けるために使う。
-const APP_VERSION = "2026-08-27e";
+const APP_VERSION = "2026-08-27f";
 
 const STORAGE_KEY = "greenDays.v1";
 const SNAPSHOT_KEY = "greenDays.snapshots.v1";
@@ -122,20 +122,20 @@ function totalStock(product) {
 }
 
 /**
- * 在庫が尽きた 店舗×商品。0以下、つまり売り切れか売り越しだけを拾う。
- * その店舗で扱ったことのある商品だけを対象にする。すべての組み合わせを
+ * 商品ごとの在庫。合計と、店舗ごとの内訳を添えて返す。
+ * その店舗で扱ったことのある商品だけを内訳に出す。すべての組み合わせを
  * 見ると、置いていない商品が在庫0として大量に並んでしまうため。
  */
-function lowStockEntries() {
-  const out = [];
-  db.products.forEach((product) => {
+function stockOverview() {
+  return db.products.map((product) => {
+    const perStore = [];
     db.stores.forEach((store) => {
       if (!product.stockByStore || !Object.prototype.hasOwnProperty.call(product.stockByStore, store.id)) return;
-      const qty = getStock(product, store.id);
-      if (qty <= 0) out.push({ product, store, qty });
+      perStore.push({ store, qty: getStock(product, store.id) });
     });
+    const total = perStore.reduce((sum, e) => sum + e.qty, 0);
+    return { product, perStore, total };
   });
-  return out;
 }
 
 /** select 要素に店舗の一覧を入れる */
@@ -349,7 +349,7 @@ function showToast(msg) {
 
 const SCREENS = [
   "home", "sale", "stock", "report", "history", "settings",
-  "product-form", "import", "shipment",
+  "product-form", "import", "shipment", "record-edit",
 ];
 
 function showScreen(name, opts = {}) {
@@ -357,7 +357,12 @@ function showScreen(name, opts = {}) {
     const el = document.getElementById(`screen-${s}`);
     if (el) el.hidden = s !== name;
   });
-  const SUB_SCREEN_TABS = { "product-form": "stock", import: "sale", shipment: "stock" };
+  const SUB_SCREEN_TABS = {
+    "product-form": "stock",
+    import: "sale",
+    shipment: "stock",
+    "record-edit": "history",
+  };
   const activeTab = opts.activeTab || SUB_SCREEN_TABS[name] || name;
   document.querySelectorAll(".tab-btn").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.screen === activeTab);
@@ -402,21 +407,25 @@ function renderHome() {
   document.getElementById("home-month-total").textContent = formatYen(monthTotal);
   document.getElementById("home-month-qty").textContent = String(monthQty);
 
-  const lowStock = lowStockEntries().sort((a, b) => a.qty - b.qty);
-  document.getElementById("home-low-stock-badge").textContent = String(lowStock.length);
-  const lowStockList = document.getElementById("home-low-stock-list");
-  lowStockList.innerHTML = "";
-  if (lowStock.length === 0) {
-    lowStockList.innerHTML = `<div class="list-empty">在庫切れの商品はありません</div>`;
+  // 在庫は多い順。残り少ないものは下に集まるので、補充の判断もここでつく
+  const stockRows = stockOverview().sort((a, b) => b.total - a.total);
+  document.getElementById("home-stock-badge").textContent = String(stockRows.length);
+  const stockList = document.getElementById("home-stock-list");
+  stockList.innerHTML = "";
+  if (stockRows.length === 0) {
+    stockList.innerHTML = `<div class="list-empty">まだ商品が登録されていません</div>`;
   } else {
-    lowStock.forEach((entry) => {
-      lowStockList.appendChild(
+    stockRows.forEach((row) => {
+      const breakdown = row.perStore.length
+        ? row.perStore.map((e) => `${e.store.name} ${e.qty}`).join("・")
+        : "どの店舗にも置いていません";
+      stockList.appendChild(
         buildListItem({
-          title: `${entry.store.name}　${entry.product.name}`,
-          sub: entry.qty < 0 ? "売り越し" : "売り切れ",
-          value: `残り ${entry.qty}`,
-          low: true,
-          onClick: () => openProductForm(entry.product.id),
+          title: row.product.name,
+          sub: breakdown,
+          value: `${row.total}点`,
+          low: row.total <= 0,
+          onClick: () => openProductForm(row.product.id),
         })
       );
     });
@@ -2085,7 +2094,7 @@ function renderHistory() {
   const showingSales = historyKind === "sales";
   document.getElementById("history-title").textContent = showingSales
     ? "売上の履歴"
-    : "出荷・棚卸しの履歴";
+    : "出荷の履歴";
 
   const source = showingSales ? db.sales : db.restocks;
   const rows = source
@@ -2099,7 +2108,7 @@ function renderHistory() {
 
   if (rows.length === 0) {
     list.innerHTML = `<div class="list-empty">${
-      showingSales ? "売上の記録がありません" : "出荷・棚卸しの記録がありません"
+      showingSales ? "売上の記録がありません" : "出荷の記録がありません"
     }</div>`;
     document.getElementById("btn-history-more").hidden = true;
     return;
@@ -2122,6 +2131,7 @@ function buildSaleHistoryItem(s) {
     title: `${s.storeName || "―"}　${s.productName}`,
     sub: `${s.date}・${s.qty}点${s.memo ? "・" + s.memo : ""}`,
     value: formatYen(s.total),
+    onClick: () => openRecordEdit("sale", s.id),
     onDelete: () => deleteSale(s.id),
   });
 }
@@ -2134,6 +2144,7 @@ function buildRestockHistoryItem(r) {
     title: `${r.storeName || "―"}　${r.productName}`,
     sub: `${r.date}・${kind}${memo}`,
     value: r.type === "in" ? `+${r.qty}点` : `→ ${r.qty}点`,
+    onClick: () => openRecordEdit("restock", r.id),
     onDelete: () => deleteRestock(r.id),
   });
 }
@@ -2167,6 +2178,220 @@ function deleteRestock(id) {
   showToast("削除しました");
   renderHistory();
 }
+
+// ---------- 履歴の修正 ----------
+
+/**
+ * 履歴から1件を開いて直す。売上と出荷で必要な項目が違うので、
+ * 同じ画面の項目を出し入れして使い回す。
+ */
+let editingRecord = null;
+let recordTotalTouched = false;
+
+function fillProductSelect(select, selectedId, fallbackName) {
+  select.innerHTML = "";
+  db.products.forEach((p) => {
+    const opt = document.createElement("option");
+    opt.value = p.id;
+    opt.textContent = p.name;
+    select.appendChild(opt);
+  });
+  select.value = selectedId || "";
+  // 記録した後で商品を消したときは、名前だけの選択肢を足して迷子にしない
+  if (selectedId && select.value !== selectedId) {
+    const opt = document.createElement("option");
+    opt.value = selectedId;
+    opt.textContent = `${fallbackName || "（削除された商品）"}（削除済み）`;
+    select.insertBefore(opt, select.firstChild);
+    select.value = selectedId;
+  }
+}
+
+function findRecord(kind, id) {
+  return kind === "sale"
+    ? db.sales.find((s) => s.id === id)
+    : db.restocks.find((r) => r.id === id);
+}
+
+function openRecordEdit(kind, id) {
+  const rec = findRecord(kind, id);
+  if (!rec) return;
+  if (db.stores.length === 0) {
+    showToast("先に店舗を登録してください");
+    return;
+  }
+
+  const isSale = kind === "sale";
+  const isAdjust = !isSale && rec.type === "adjust";
+  editingRecord = { kind, id };
+  recordTotalTouched = true; // 開いた時点の合計は記録どおりに残す
+
+  document.getElementById("record-edit-title").textContent = isSale
+    ? "売上を修正"
+    : isAdjust
+    ? "棚卸しを修正"
+    : "出荷を修正";
+  document.getElementById("record-edit-note").textContent = isAdjust
+    ? "棚卸しは在庫の数を直接決めた記録です。ここを直しても在庫の数は変わりません。日付とメモだけ直せます。"
+    : isSale
+    ? "直すと在庫の数も合わせて計算し直します。"
+    : "直すと在庫の数も合わせて計算し直します。";
+
+  fillStoreSelect(document.getElementById("record-edit-store"), rec.storeId);
+  fillProductSelect(
+    document.getElementById("record-edit-product"),
+    rec.productId,
+    rec.productName
+  );
+  document.getElementById("record-edit-qty").value = String(rec.qty);
+  document.getElementById("record-edit-date").value = rec.date || todayStr();
+  document.getElementById("record-edit-memo").value = rec.memo || "";
+
+  document.getElementById("record-edit-price-field").hidden = !isSale;
+  document.getElementById("record-edit-total-field").hidden = !isSale;
+  if (isSale) {
+    document.getElementById("record-edit-price").value = String(rec.unitPrice);
+    document.getElementById("record-edit-total").value = String(rec.total);
+  }
+
+  ["record-edit-store", "record-edit-product", "record-edit-qty"].forEach((elId) => {
+    document.getElementById(elId).disabled = isAdjust;
+  });
+
+  updateRecordEditDiff();
+  showScreen("record-edit");
+}
+
+/** 直したあと在庫がいくつになるかを、その場で見せる */
+function updateRecordEditDiff() {
+  const box = document.getElementById("record-edit-diff");
+  if (!editingRecord) {
+    box.hidden = true;
+    return;
+  }
+  const rec = findRecord(editingRecord.kind, editingRecord.id);
+  if (!rec || rec.type === "adjust") {
+    box.hidden = true;
+    return;
+  }
+
+  const storeId = document.getElementById("record-edit-store").value;
+  const productId = document.getElementById("record-edit-product").value;
+  const qty = Math.max(1, Number(document.getElementById("record-edit-qty").value) || 0);
+  const product = findProduct(productId);
+  const store = db.stores.find((s) => s.id === storeId);
+  if (!product || !store) {
+    box.hidden = true;
+    return;
+  }
+
+  const applyDelta = editingRecord.kind === "sale" ? -qty : qty;
+  const revertDelta = editingRecord.kind === "sale" ? rec.qty : -rec.qty;
+  const current = getStock(product, storeId);
+  const sameSlot = rec.productId === productId && rec.storeId === storeId;
+  const after = current + (sameSlot ? revertDelta : 0) + applyDelta;
+
+  box.hidden = false;
+  box.textContent = `保存すると、${store.name}の${product.name}の在庫は ${current} → ${after} 点になります。`;
+}
+
+function recordEditInputs() {
+  return [
+    "record-edit-store",
+    "record-edit-product",
+    "record-edit-qty",
+    "record-edit-price",
+  ].map((id) => document.getElementById(id));
+}
+
+recordEditInputs().forEach((el) => {
+  el.addEventListener("input", () => {
+    const qty = Number(document.getElementById("record-edit-qty").value) || 0;
+    const price = Number(document.getElementById("record-edit-price").value) || 0;
+    // 数量や単価を触ったら合計は計算し直す。値引きを手で入れたい人は
+    // 合計欄を直接いじれば、そちらが残る
+    if (el.id !== "record-edit-store" && el.id !== "record-edit-product") {
+      recordTotalTouched = false;
+    }
+    if (!recordTotalTouched) {
+      document.getElementById("record-edit-total").value = String(qty * price);
+    }
+    updateRecordEditDiff();
+  });
+});
+
+document.getElementById("record-edit-total").addEventListener("input", () => {
+  recordTotalTouched = true;
+});
+
+document.getElementById("btn-record-edit-cancel").addEventListener("click", () => {
+  editingRecord = null;
+  showScreen("history");
+});
+
+document.getElementById("record-edit-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (!editingRecord) return;
+  const rec = findRecord(editingRecord.kind, editingRecord.id);
+  if (!rec) {
+    showToast("記録が見つかりませんでした");
+    showScreen("history");
+    return;
+  }
+
+  const isSale = editingRecord.kind === "sale";
+  const isAdjust = !isSale && rec.type === "adjust";
+  const date = document.getElementById("record-edit-date").value || todayStr();
+  const memo = document.getElementById("record-edit-memo").value.trim();
+
+  if (isAdjust) {
+    rec.date = date;
+    rec.memo = memo;
+    saveDB();
+    editingRecord = null;
+    showToast("修正しました");
+    showScreen("history");
+    return;
+  }
+
+  const storeId = document.getElementById("record-edit-store").value;
+  const productId = document.getElementById("record-edit-product").value;
+  const qty = Math.max(1, Math.round(Number(document.getElementById("record-edit-qty").value) || 0));
+  const store = db.stores.find((s) => s.id === storeId);
+  const product = findProduct(productId);
+  if (!store || !product) {
+    showToast("店舗と商品を選んでください");
+    return;
+  }
+
+  // 先に元の記録の分を在庫に戻してから、新しい内容を当てる
+  const oldProduct = findProduct(rec.productId);
+  if (oldProduct && rec.storeId) {
+    addStock(oldProduct, rec.storeId, isSale ? rec.qty : -rec.qty);
+  }
+  addStock(product, storeId, isSale ? -qty : qty);
+
+  rec.storeId = storeId;
+  rec.storeName = store.name;
+  rec.productId = productId;
+  rec.productName = product.name;
+  rec.qty = qty;
+  rec.date = date;
+  rec.memo = memo;
+
+  if (isSale) {
+    const unitPrice = Math.max(0, Math.round(Number(document.getElementById("record-edit-price").value) || 0));
+    const totalInput = document.getElementById("record-edit-total").value;
+    const total = totalInput === "" ? qty * unitPrice : Math.max(0, Math.round(Number(totalInput) || 0));
+    rec.unitPrice = unitPrice;
+    rec.total = total;
+  }
+
+  saveDB();
+  editingRecord = null;
+  showToast("修正しました");
+  showScreen("history");
+});
 
 // ---------- 設定（バックアップ／復元／初期化） ----------
 

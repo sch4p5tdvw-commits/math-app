@@ -83,10 +83,10 @@
       </div>
       <div class="card">
         <div class="card-head">
-          <h2>在庫切れ・売り越し</h2>
-          <span class="badge" id="home-low-stock-badge">0</span>
+          <h2>在庫</h2>
+          <span class="badge badge-neutral" id="home-stock-badge">0</span>
         </div>
-        <div id="home-low-stock-list" class="list"></div>
+        <div id="home-stock-list" class="list"></div>
       </div>
       <div class="card">
         <h2>最近の売上</h2>
@@ -371,17 +371,66 @@
       <div class="card">
         <div class="chiprow" id="history-kind-chips">
           <button type="button" class="chip active" data-kind="sales">売上</button>
-          <button type="button" class="chip" data-kind="restocks">出荷・棚卸し</button>
+          <button type="button" class="chip" data-kind="restocks">出荷</button>
         </div>
         <div class="chiprow" id="history-store-chips"></div>
         <div class="card-head">
           <h2 id="history-title">売上の履歴</h2>
           <span class="badge badge-neutral" id="history-count">0</span>
         </div>
+        <p class="note">タップすると、その記録を直せます。</p>
         <div id="history-list" class="list"></div>
         <button type="button" id="btn-history-more" class="btn btn-secondary" hidden>
           さらに表示
         </button>
+      </div>
+    </section>
+
+    <!-- 履歴の修正 -->
+    <section id="screen-record-edit" class="screen" hidden>
+      <div class="card">
+        <h2 id="record-edit-title">記録を修正</h2>
+        <p class="note" id="record-edit-note"></p>
+        <form id="record-edit-form" class="form" autocomplete="off">
+          <label class="field">
+            <span>店舗</span>
+            <select id="record-edit-store" required></select>
+          </label>
+          <label class="field">
+            <span>商品</span>
+            <select id="record-edit-product" required></select>
+          </label>
+          <div class="field-row">
+            <label class="field">
+              <span>数量</span>
+              <input type="number" id="record-edit-qty" min="1" step="1" required>
+            </label>
+            <label class="field" id="record-edit-price-field">
+              <span>単価（円）</span>
+              <input type="number" id="record-edit-price" min="0" step="1">
+            </label>
+          </div>
+          <label class="field" id="record-edit-total-field">
+            <span>合計（円）</span>
+            <input type="number" id="record-edit-total" min="0" step="1">
+            <small class="field-hint">
+              数量や単価を直すと自動で計算されます。値引きされていたときは、ここに実際の金額を入れてください。
+            </small>
+          </label>
+          <label class="field">
+            <span>日付</span>
+            <input type="date" id="record-edit-date" required>
+          </label>
+          <label class="field">
+            <span>メモ（任意）</span>
+            <input type="text" id="record-edit-memo" maxlength="60">
+          </label>
+          <div id="record-edit-diff" class="note record-edit-diff" hidden></div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">保存する</button>
+            <button type="button" id="btn-record-edit-cancel" class="btn btn-secondary">もどる</button>
+          </div>
+        </form>
       </div>
     </section>
 
