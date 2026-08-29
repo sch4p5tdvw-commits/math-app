@@ -299,6 +299,31 @@ html, body {
   font-weight: 700;
   color: var(--felt-dark);
 }
+.seat-diff {
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-top: 2px;
+  color: #888;
+}
+.seat-diff.positive {
+  color: var(--positive);
+}
+.seat-diff.negative {
+  color: var(--negative);
+}
+
+.chip-diff {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #888;
+  margin-left: 2px;
+}
+.chip-diff.positive {
+  color: var(--positive);
+}
+.chip-diff.negative {
+  color: var(--negative);
+}
 
 .waiting-box {
   background: rgba(255, 255, 255, 0.12);
