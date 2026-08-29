@@ -134,6 +134,16 @@ html, body {
   width: 100%;
 }
 
+.import-textarea {
+  height: 160px;
+  resize: vertical;
+  font-family: monospace;
+  font-size: 0.8rem;
+  white-space: pre;
+  overflow: auto;
+  margin: 8px 0;
+}
+
 .setting-row {
   display: flex;
   align-items: center;

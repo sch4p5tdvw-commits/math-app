@@ -4,6 +4,7 @@
 
 const STORAGE_KEY = "mahjongScorerState_v1";
 const ARCHIVE_KEY = "mahjongScorerArchive_v1";
+const DEFAULT_START_POINTS = 25000;
 const MIN_PLAYERS = 4;
 const MAX_PLAYERS = 6;
 const ROUND_NAMES = ["東", "南", "西", "北"];
@@ -1068,6 +1069,138 @@ function renderHistoryScreen() {
 
 // ---------- 過去の記録・通算成績画面 ----------
 
+// スプレッドシートからのコピペ（タブ区切り）を読み込む。
+// 1行目: 名前を並べたヘッダー行（先頭は日付列なので空でよい）
+// 2行目以降: 日付, その日の各プレイヤーの収支（空欄=その回は不参加）
+// 日付が空の行は「直前の日付と同じ日のもう1局」として扱う。
+function parseSpreadsheetImport(text) {
+  const lines = text.split(/\r?\n/).filter((line) => line.trim() !== "");
+  if (lines.length < 2) {
+    return { entries: [], warnings: ["データが見つかりませんでした。1行目に名前、2行目以降に日付と収支を貼り付けてください。"] };
+  }
+
+  const names = lines[0].split("\t").map((s) => s.trim()).filter((s) => s !== "");
+  if (names.length === 0) {
+    return { entries: [], warnings: ["1行目からプレイヤー名が読み取れませんでした。"] };
+  }
+
+  const warnings = [];
+  const entries = [];
+  let lastMonth = null;
+  let year = new Date().getFullYear() - 1;
+  let lastDateKey = null;
+  let sameDaySeq = 0;
+
+  for (let i = 1; i < lines.length; i++) {
+    const cells = lines[i].split("\t");
+    const dateCell = (cells[0] || "").trim();
+    const values = cells.slice(1);
+
+    const results = [];
+    let sum = 0;
+    let hasValue = false;
+    names.forEach((name, idx) => {
+      const raw = (values[idx] || "").trim();
+      if (raw === "") return;
+      const n = Number(raw.replace(/,/g, ""));
+      if (Number.isNaN(n)) {
+        warnings.push(`${i + 1}行目: 「${raw}」を数値として読み取れませんでした（${name}）`);
+        return;
+      }
+      hasValue = true;
+      sum += n;
+      results.push({ name, diff: n, score: DEFAULT_START_POINTS + n });
+    });
+
+    if (!hasValue) continue;
+
+    if (sum !== 0) {
+      warnings.push(`${i + 1}行目（${dateCell || "同日"}）: 収支の合計が0になりません（合計${sum}）`);
+    }
+
+    let dateKey = dateCell;
+    const m = dateCell.match(/^(\d{1,2})\/(\d{1,2})/);
+    if (m) {
+      const month = Number(m[1]);
+      const day = Number(m[2]);
+      if (lastMonth !== null && month < lastMonth - 6) year += 1;
+      lastMonth = month;
+      dateKey = `${month}/${day}`;
+      if (dateKey !== lastDateKey) {
+        sameDaySeq = 0;
+        lastDateKey = dateKey;
+      } else {
+        sameDaySeq += 1;
+      }
+      entries.push({
+        id: uid(),
+        endedAt: new Date(year, month - 1, day, 12, sameDaySeq).getTime(),
+        startPoints: DEFAULT_START_POINTS,
+        results,
+        hands: [],
+      });
+    } else if (dateCell === "" && lastDateKey !== null) {
+      // 日付が空欄 = 直前の日付と同じ日のもう1局
+      sameDaySeq += 1;
+      const [month, day] = lastDateKey.split("/").map(Number);
+      entries.push({
+        id: uid(),
+        endedAt: new Date(year, month - 1, day, 12, sameDaySeq).getTime(),
+        startPoints: DEFAULT_START_POINTS,
+        results,
+        hands: [],
+      });
+    } else {
+      warnings.push(`${i + 1}行目: 日付が読み取れず、この行はスキップしました`);
+    }
+  }
+
+  return { entries, warnings };
+}
+
+function openImportModal() {
+  const box = el(`
+    <div class="modal-content">
+      <h2>スプレッドシートから読み込む</h2>
+      <p class="hint-text">
+        1行目にプレイヤー名、2行目以降に「日付・各プレイヤーの収支」をタブ区切りで貼り付けてください。
+        空欄はその回は不参加という意味になります。日付が空欄の行は、直前の日付と同じ日のもう1局として扱われます。
+      </p>
+      <textarea id="import-textarea" class="text-input import-textarea" placeholder="ひろと&#9;ともみ&#9;ひな&#9;みう&#9;たつき&#9;けいた&#10;9/21&#9;-4000&#9;&#9;&#9;12000&#9;-4000&#9;-4000"></textarea>
+      <div id="import-result" class="hint-text"></div>
+      <div class="modal-actions">
+        <button id="import-cancel" class="btn btn-secondary">キャンセル</button>
+        <button id="import-confirm" class="btn btn-primary">読み込む</button>
+      </div>
+    </div>
+  `);
+
+  box.querySelector("#import-cancel").addEventListener("click", closeModal);
+  box.querySelector("#import-confirm").addEventListener("click", () => {
+    const text = box.querySelector("#import-textarea").value;
+    const { entries, warnings } = parseSpreadsheetImport(text);
+    const resultBox = box.querySelector("#import-result");
+
+    if (entries.length === 0) {
+      resultBox.textContent = warnings.length ? warnings.join(" / ") : "読み込める内容がありませんでした。";
+      return;
+    }
+
+    const archive = loadArchive();
+    const merged = archive.concat(entries).sort((a, b) => b.endedAt - a.endedAt);
+    saveArchive(merged);
+
+    let msg = `${entries.length}件のセッションを読み込みました。`;
+    if (warnings.length > 0) {
+      msg += ` （${warnings.length}件の注意点があります: ${warnings.slice(0, 3).join(" / ")}${warnings.length > 3 ? " ..." : ""}）`;
+    }
+    resultBox.textContent = msg;
+    renderArchiveScreen();
+  });
+
+  openModal(box);
+}
+
 function computeCumulativeStats(archive) {
   const statsByName = new Map();
   archive.forEach((session) => {
@@ -1227,6 +1360,7 @@ function bindTableEvents() {
       renderArchiveScreen();
     }
   });
+  document.getElementById("archive-import-btn").addEventListener("click", openImportModal);
 }
 
 function init() {
