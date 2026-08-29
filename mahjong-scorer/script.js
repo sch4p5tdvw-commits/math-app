@@ -225,7 +225,11 @@ function finalizeRon({ winnerSeat, loserSeat, basePayment, label, riichiSeats })
     advanceDealer();
   }
 
-  const summary = `${winner.name} が ${loser.name} から ${label}（${formatPoints(payment).slice(1)}点）ロン`;
+  const summary =
+    `${winner.name} が ${loser.name} から ${label} ロン` +
+    `（${winner.name} +${(payment + potWon).toLocaleString("ja-JP")}点` +
+    (potWon > 0 ? `／うち供託 ${potWon.toLocaleString("ja-JP")}点` : "") +
+    `）`;
   pushHistory(
     {
       type: "ron",
@@ -268,7 +272,11 @@ function finalizeTsumo({ winnerSeat, basePayments, label, riichiSeats }) {
     advanceDealer();
   }
 
-  const summary = `${winner.name} が ${label}（合計${total.toLocaleString("ja-JP")}点）ツモ`;
+  const summary =
+    `${winner.name} が ${label} ツモ` +
+    `（${winner.name} +${(total + potWon).toLocaleString("ja-JP")}点` +
+    (potWon > 0 ? `／うち供託 ${potWon.toLocaleString("ja-JP")}点` : "") +
+    `）`;
   pushHistory({ type: "tsumo", summary, deltas }, prevSnapshot);
 }
 
@@ -643,7 +651,7 @@ function buildHanFuPicker(container, onChange) {
   emit();
 }
 
-function buildRiichiPicker(container, seatIndexes) {
+function buildRiichiPicker(container, seatIndexes, onChange) {
   const selected = new Set();
   container.innerHTML = `<label class="picker-label">リーチ宣言（該当者をタップ）</label><div class="riichi-buttons"></div>`;
   const box = container.querySelector(".riichi-buttons");
@@ -658,10 +666,23 @@ function buildRiichiPicker(container, seatIndexes) {
         selected.add(idx);
         b.classList.add("riichi-btn-selected");
       }
+      if (onChange) onChange();
     });
     box.appendChild(b);
   });
   return selected;
+}
+
+// 和了者が最終的に受け取る供託（元からある供託＋この局のリーチ棒）
+function potForPreview(riichiSelected) {
+  return state.pot + riichiSelected.size * 1000;
+}
+
+// 「満貫8,000 ＋ 2本場600」のような内訳を組み立てる
+function handBreakdown(label, basePayment, honba) {
+  let text = `${label} ${basePayment.toLocaleString("ja-JP")}点`;
+  if (honba > 0) text += ` ＋ ${honba}本場 ${(honba * 300).toLocaleString("ja-JP")}点`;
+  return text;
 }
 
 // ---------- モーダル: ロン入力 ----------
@@ -743,7 +764,7 @@ function openRonModal() {
   });
 
   const riichiBox = box.querySelector("#riichi-picker");
-  const riichiSelected = buildRiichiPicker(riichiBox, [0, 1, 2, 3]);
+  const riichiSelected = buildRiichiPicker(riichiBox, [0, 1, 2, 3], () => updatePreview());
 
   buildHanFuPicker(hanfuBox, (info) => {
     handInfo = info;
@@ -770,7 +791,17 @@ function openRonModal() {
     }
     const { basePayment, label } = getBasePaymentAndLabel();
     const payment = calcRonPayment(basePayment, state.honba);
-    preview.textContent = `${label} → ${payment.toLocaleString("ja-JP")}点`;
+    const pot = potForPreview(riichiSelected);
+    const winnerName = getPlayer(state.seats[winnerSeat]).name;
+    const loserName = getPlayer(state.seats[loserSeat]).name;
+
+    let html = `<span class="preview-calc">${escapeHtml(handBreakdown(label, basePayment, state.honba))}</span>`;
+    html += `<span class="preview-line">${escapeHtml(loserName)} の支払い <b>${payment.toLocaleString("ja-JP")}点</b></span>`;
+    if (pot > 0) {
+      html += `<span class="preview-calc">＋ 供託・リーチ棒 ${pot.toLocaleString("ja-JP")}点</span>`;
+    }
+    html += `<span class="preview-line">${escapeHtml(winnerName)} の獲得 <b>${(payment + pot).toLocaleString("ja-JP")}点</b></span>`;
+    preview.innerHTML = html;
   }
 
   renderChoices();
@@ -887,7 +918,7 @@ function openTsumoModal() {
   });
 
   const riichiBox = box.querySelector("#riichi-picker");
-  const riichiSelected = buildRiichiPicker(riichiBox, [0, 1, 2, 3]);
+  const riichiSelected = buildRiichiPicker(riichiBox, [0, 1, 2, 3], () => updatePreview());
 
   buildHanFuPicker(hanfuBox, (info) => {
     handInfo = info;
@@ -920,11 +951,26 @@ function openTsumoModal() {
     }
     const { basePayments, label } = getBasePaymentsAndLabel();
     const result = calcTsumoPayments(basePayments, state.honba);
-    const text =
-      result.type === "dealer"
-        ? `${label} → 子全員 ${result.each.toLocaleString("ja-JP")}点ずつ`
-        : `${label} → 親 ${result.dealerPay.toLocaleString("ja-JP")}点 / 子 ${result.otherPay.toLocaleString("ja-JP")}点ずつ`;
-    preview.textContent = text;
+    const pot = potForPreview(riichiSelected);
+    const winnerName = getPlayer(state.seats[winnerSeat]).name;
+
+    let collected;
+    let detail;
+    if (result.type === "dealer") {
+      collected = result.each * 3;
+      detail = `子全員 ${result.each.toLocaleString("ja-JP")}点ずつ`;
+    } else {
+      collected = result.dealerPay + result.otherPay * 2;
+      detail = `親 ${result.dealerPay.toLocaleString("ja-JP")}点 / 子 ${result.otherPay.toLocaleString("ja-JP")}点ずつ`;
+    }
+
+    let html = `<span class="preview-calc">${escapeHtml(label)}${state.honba > 0 ? `（${state.honba}本場こみ）` : ""}</span>`;
+    html += `<span class="preview-line">${escapeHtml(detail)}</span>`;
+    if (pot > 0) {
+      html += `<span class="preview-calc">支払い合計 ${collected.toLocaleString("ja-JP")}点 ＋ 供託・リーチ棒 ${pot.toLocaleString("ja-JP")}点</span>`;
+    }
+    html += `<span class="preview-line">${escapeHtml(winnerName)} の獲得 <b>${(collected + pot).toLocaleString("ja-JP")}点</b></span>`;
+    preview.innerHTML = html;
   }
 
   renderChoices();

@@ -694,6 +694,24 @@ html, body {
   font-size: 1.05rem;
   margin: 14px 0;
 }
+.preview-text:not(:empty) {
+  background: #eef3ee;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.preview-line {
+  display: block;
+  font-size: 0.95rem;
+}
+.preview-line b {
+  font-size: 1.15rem;
+}
+.preview-calc {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: #667;
+}
 
 .modal-actions {
   display: flex;
