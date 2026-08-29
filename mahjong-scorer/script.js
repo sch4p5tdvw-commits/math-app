@@ -4,6 +4,7 @@
 
 const STORAGE_KEY = "mahjongScorerState_v1";
 const ARCHIVE_KEY = "mahjongScorerArchive_v1";
+const MEMBERS_KEY = "mahjongScorerMembers_v1";
 const DEFAULT_START_POINTS = 25000;
 const MIN_PLAYERS = 4;
 const MAX_PLAYERS = 6;
@@ -338,6 +339,26 @@ function openModal(node) {
 
 // ---------- セットアップ画面 ----------
 
+// いつものメンバー。前回使った顔ぶれを覚えておき、まだ一度も対局して
+// いなければこの初期メンバーを出す。
+const DEFAULT_PLAYER_NAMES = ["ひろと", "ともみ", "ひな", "みう", "たつき", "けいた"];
+
+function loadMemberNames() {
+  try {
+    const raw = localStorage.getItem(MEMBERS_KEY);
+    if (!raw) return DEFAULT_PLAYER_NAMES.slice();
+    const list = JSON.parse(raw);
+    if (!Array.isArray(list) || list.length === 0) return DEFAULT_PLAYER_NAMES.slice();
+    return list.slice(0, MAX_PLAYERS);
+  } catch (e) {
+    return DEFAULT_PLAYER_NAMES.slice();
+  }
+}
+
+function saveMemberNames(names) {
+  localStorage.setItem(MEMBERS_KEY, JSON.stringify(names));
+}
+
 let setupPlayers = [];
 
 function renderSetupPlayerList() {
@@ -365,6 +386,9 @@ function escapeHtml(str) {
 }
 
 function initSetupScreen() {
+  setupPlayers = loadMemberNames();
+  renderSetupPlayerList();
+
   const saved = loadState();
   if (saved && saved.started) {
     document.getElementById("setup-resume").hidden = false;
@@ -395,8 +419,9 @@ function initSetupScreen() {
       showSetupError(`メンバーは最低${MIN_PLAYERS}人必要です`);
       return;
     }
-    const startPoints = Number(document.getElementById("setup-start-points").value) || 25000;
+    const startPoints = Number(document.getElementById("setup-start-points").value) || DEFAULT_START_POINTS;
     const kiriage = document.getElementById("setup-kiriage").checked;
+    saveMemberNames(setupPlayers);
     startNewSession(setupPlayers, startPoints, kiriage);
   });
 }
@@ -1347,7 +1372,8 @@ function bindTableEvents() {
     if (confirm("対局を終了します。ここまでの記録は「過去の記録」に保存されます。よろしいですか？")) {
       archiveCurrentSession();
       clearState();
-      setupPlayers = [];
+      // 次の対局も同じ顔ぶれで始めることが多いので、メンバーは残しておく
+      setupPlayers = loadMemberNames();
       renderSetupPlayerList();
       showScreen("screen-setup");
       document.getElementById("setup-resume").hidden = true;
