@@ -1,3 +1,18 @@
+@font-face {
+  font-family: "M PLUS Rounded 1c";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/mplus-rounded-1c-regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "M PLUS Rounded 1c";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("fonts/mplus-rounded-1c-bold.woff2") format("woff2");
+}
+
 :root {
   --felt: #0b5d3b;
   --felt-dark: #084a30;
@@ -20,7 +35,7 @@ html, body {
   padding: 0;
   background: var(--felt);
   color: var(--ink);
-  font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", system-ui, sans-serif;
+  font-family: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Hiragino Sans", "Yu Gothic", "Noto Sans JP", system-ui, sans-serif;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -470,6 +485,53 @@ html, body {
 .fu-btn-selected {
   border-color: var(--felt-dark);
   background: #dff0e5;
+}
+
+.mangan-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 14px;
+}
+.mangan-btn {
+  border: 2px solid var(--gold);
+  background: #fff8e6;
+  color: var(--felt-dark);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.mode-toggle {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+.mode-toggle-btn {
+  flex: 1;
+  border: 2px solid #ccc;
+  background: white;
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.mode-toggle-btn-selected {
+  border-color: var(--felt-dark);
+  background: #dff0e5;
+  font-weight: 700;
+}
+
+.direct-input-box {
+  margin: 10px 0;
+}
+.direct-input-box .number-input {
+  margin-top: 6px;
+}
+.direct-input-row {
+  margin-bottom: 10px;
 }
 
 .riichi-buttons {

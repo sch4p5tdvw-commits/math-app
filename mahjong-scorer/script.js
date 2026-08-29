@@ -76,19 +76,32 @@ function calcBase(han, fu, kiriageMangan, yakumanMulti) {
   return { base, label };
 }
 
-function calcRonPayment(base, isDealerWin, honba) {
+// 翻符から「本場をのぞいた」基本の支払い額を出す（直接入力モードでは
+// この段階の金額をユーザーがそのまま入力できるようにする）
+function ronBaseFromHanFu(base, isDealerWin) {
   const mult = isDealerWin ? 6 : 4;
-  return roundUp100(base * mult) + honba * 300;
+  return roundUp100(base * mult);
 }
 
-function calcTsumoPayments(base, isDealerWin, honba) {
-  if (isDealerWin) {
-    const each = roundUp100(base * 2) + honba * 100;
-    return { type: "dealer", each };
+function tsumoBaseFromHanFu(base, isDealerWin) {
+  if (isDealerWin) return { type: "dealer", each: roundUp100(base * 2) };
+  return { type: "nondealer", dealerPay: roundUp100(base * 2), otherPay: roundUp100(base * 1) };
+}
+
+// 基本の支払い額に本場（+300点/+100点）を乗せて最終の支払い額にする
+function calcRonPayment(basePayment, honba) {
+  return basePayment + honba * 300;
+}
+
+function calcTsumoPayments(basePayments, honba) {
+  if (basePayments.type === "dealer") {
+    return { type: "dealer", each: basePayments.each + honba * 100 };
   }
-  const dealerPay = roundUp100(base * 2) + honba * 100;
-  const otherPay = roundUp100(base * 1) + honba * 100;
-  return { type: "nondealer", dealerPay, otherPay };
+  return {
+    type: "nondealer",
+    dealerPay: basePayments.dealerPay + honba * 100,
+    otherPay: basePayments.otherPay + honba * 100,
+  };
 }
 
 // ---------- 席・親のヘルパー ----------
@@ -156,13 +169,12 @@ function applyRiichi(riichiSeatIndexes) {
   });
 }
 
-function finalizeRon({ winnerSeat, loserSeat, han, fu, yakumanMulti, riichiSeats }) {
+function finalizeRon({ winnerSeat, loserSeat, basePayment, label, riichiSeats }) {
   const prevSnapshot = snapshotState();
   applyRiichi(riichiSeats);
 
+  const payment = calcRonPayment(basePayment, state.honba);
   const isDealerWin = isDealerSeat(winnerSeat);
-  const { base, label } = calcBase(han, fu, state.settings.kiriageMangan, yakumanMulti);
-  const payment = calcRonPayment(base, isDealerWin, state.honba);
 
   const winner = getPlayer(state.seats[winnerSeat]);
   const loser = getPlayer(state.seats[loserSeat]);
@@ -180,7 +192,7 @@ function finalizeRon({ winnerSeat, loserSeat, han, fu, yakumanMulti, riichiSeats
     advanceDealer();
   }
 
-  const summary = `${winner.name} が ${loser.name} から ${label || han + "翻" + fu + "符"}（${formatPoints(payment).slice(1)}点）ロン`;
+  const summary = `${winner.name} が ${loser.name} から ${label}（${formatPoints(payment).slice(1)}点）ロン`;
   pushHistory(
     {
       type: "ron",
@@ -191,13 +203,11 @@ function finalizeRon({ winnerSeat, loserSeat, han, fu, yakumanMulti, riichiSeats
   );
 }
 
-function finalizeTsumo({ winnerSeat, han, fu, yakumanMulti, riichiSeats }) {
+function finalizeTsumo({ winnerSeat, basePayments, label, riichiSeats }) {
   const prevSnapshot = snapshotState();
   applyRiichi(riichiSeats);
 
-  const isDealerWin = isDealerSeat(winnerSeat);
-  const { base, label } = calcBase(han, fu, state.settings.kiriageMangan, yakumanMulti);
-  const result = calcTsumoPayments(base, isDealerWin, state.honba);
+  const result = calcTsumoPayments(basePayments, state.honba);
 
   const winner = getPlayer(state.seats[winnerSeat]);
   const potWon = state.pot;
@@ -217,7 +227,7 @@ function finalizeTsumo({ winnerSeat, han, fu, yakumanMulti, riichiSeats }) {
   deltas[winner.id] = (deltas[winner.id] || 0) + total + potWon;
   state.pot = 0;
 
-  const dealerStays = isDealerWin;
+  const dealerStays = isDealerSeat(winnerSeat);
   if (dealerStays) {
     state.honba += 1;
   } else {
@@ -225,7 +235,7 @@ function finalizeTsumo({ winnerSeat, han, fu, yakumanMulti, riichiSeats }) {
     advanceDealer();
   }
 
-  const summary = `${winner.name} が ${label || han + "翻" + fu + "符"}（合計${total.toLocaleString("ja-JP")}点）ツモ`;
+  const summary = `${winner.name} が ${label}（合計${total.toLocaleString("ja-JP")}点）ツモ`;
   pushHistory({ type: "tsumo", summary, deltas }, prevSnapshot);
 }
 
@@ -482,7 +492,26 @@ function buildHanFuPicker(container, onChange) {
         <button type="button" class="step-btn" data-ydir="1">＋</button>
       </div>
     </div>
+    <div class="mangan-buttons" id="mangan-buttons"></div>
   `;
+
+  const MANGAN_PRESETS = [
+    { label: "満貫", han: 5 },
+    { label: "跳満", han: 6 },
+    { label: "倍満", han: 8 },
+    { label: "三倍満", han: 11 },
+    { label: "役満", han: 13 },
+  ];
+  const manganBox = container.querySelector("#mangan-buttons");
+  MANGAN_PRESETS.forEach((preset) => {
+    const b = el(`<button type="button" class="mangan-btn">${preset.label}</button>`);
+    b.addEventListener("click", () => {
+      han = preset.han;
+      refreshHanLabel();
+      emit();
+    });
+    manganBox.appendChild(b);
+  });
 
   const FU_OPTIONS = [20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 110];
   const fuButtonsBox = container.querySelector("#fu-buttons");
@@ -560,7 +589,17 @@ function openRonModal() {
       <div id="winner-buttons" class="seat-select-buttons"></div>
       <label class="picker-label">放銃者</label>
       <div id="loser-buttons" class="seat-select-buttons"></div>
+
+      <div class="mode-toggle" id="mode-toggle">
+        <button type="button" class="mode-toggle-btn" data-mode="hanfu">翻符で計算</button>
+        <button type="button" class="mode-toggle-btn" data-mode="direct">点数を直接入力</button>
+      </div>
       <div id="hanfu-picker"></div>
+      <div id="direct-picker" class="direct-input-box" hidden>
+        <label class="picker-label">支払い点数（本場は自動で加算されます）</label>
+        <input type="number" id="direct-points" class="number-input" step="100" min="0" placeholder="例: 8000">
+      </div>
+
       <div id="riichi-picker"></div>
       <p id="ron-preview" class="preview-text"></p>
       <div class="modal-actions">
@@ -572,10 +611,14 @@ function openRonModal() {
 
   let winnerSeat = null;
   let loserSeat = null;
+  let mode = "hanfu";
   let handInfo = { han: 3, fu: 30, yakumanMulti: 1 };
 
   const winnerBtns = box.querySelector("#winner-buttons");
   const loserBtns = box.querySelector("#loser-buttons");
+  const hanfuBox = box.querySelector("#hanfu-picker");
+  const directBox = box.querySelector("#direct-picker");
+  const directInput = box.querySelector("#direct-points");
 
   function renderChoices() {
     winnerBtns.innerHTML = "";
@@ -602,13 +645,37 @@ function openRonModal() {
     updatePreview();
   }
 
+  box.querySelectorAll(".mode-toggle-btn").forEach((b) => {
+    if (b.dataset.mode === mode) b.classList.add("mode-toggle-btn-selected");
+    b.addEventListener("click", () => {
+      mode = b.dataset.mode;
+      box.querySelectorAll(".mode-toggle-btn").forEach((x) => x.classList.remove("mode-toggle-btn-selected"));
+      b.classList.add("mode-toggle-btn-selected");
+      hanfuBox.hidden = mode !== "hanfu";
+      directBox.hidden = mode !== "direct";
+      updatePreview();
+    });
+  });
+
   const riichiBox = box.querySelector("#riichi-picker");
   const riichiSelected = buildRiichiPicker(riichiBox, [0, 1, 2, 3]);
 
-  buildHanFuPicker(box.querySelector("#hanfu-picker"), (info) => {
+  buildHanFuPicker(hanfuBox, (info) => {
     handInfo = info;
     updatePreview();
   });
+
+  directInput.addEventListener("input", updatePreview);
+
+  function getBasePaymentAndLabel() {
+    if (mode === "direct") {
+      const val = Math.max(0, Number(directInput.value) || 0);
+      return { basePayment: val, label: "点数入力" };
+    }
+    const { base, label } = calcBase(handInfo.han, handInfo.fu, state.settings.kiriageMangan, handInfo.yakumanMulti);
+    const basePayment = ronBaseFromHanFu(base, winnerSeat !== null && isDealerSeat(winnerSeat));
+    return { basePayment, label: label || `${handInfo.han}翻${handInfo.fu}符` };
+  }
 
   function updatePreview() {
     const preview = box.querySelector("#ron-preview");
@@ -616,9 +683,9 @@ function openRonModal() {
       preview.textContent = "";
       return;
     }
-    const { base, label } = calcBase(handInfo.han, handInfo.fu, state.settings.kiriageMangan, handInfo.yakumanMulti);
-    const payment = calcRonPayment(base, isDealerSeat(winnerSeat), state.honba);
-    preview.textContent = `${label || handInfo.han + "翻" + handInfo.fu + "符"} → ${payment.toLocaleString("ja-JP")}点`;
+    const { basePayment, label } = getBasePaymentAndLabel();
+    const payment = calcRonPayment(basePayment, state.honba);
+    preview.textContent = `${label} → ${payment.toLocaleString("ja-JP")}点`;
   }
 
   renderChoices();
@@ -629,12 +696,16 @@ function openRonModal() {
       alert("和了者と放銃者を選んでください");
       return;
     }
+    const { basePayment, label } = getBasePaymentAndLabel();
+    if (mode === "direct" && basePayment <= 0) {
+      alert("支払い点数を入力してください");
+      return;
+    }
     finalizeRon({
       winnerSeat,
       loserSeat,
-      han: handInfo.han,
-      fu: handInfo.fu,
-      yakumanMulti: handInfo.yakumanMulti,
+      basePayment,
+      label,
       riichiSeats: Array.from(riichiSelected),
     });
     closeModal();
@@ -652,7 +723,14 @@ function openTsumoModal() {
       <h2>ツモ</h2>
       <label class="picker-label">和了者</label>
       <div id="winner-buttons" class="seat-select-buttons"></div>
+
+      <div class="mode-toggle" id="mode-toggle">
+        <button type="button" class="mode-toggle-btn" data-mode="hanfu">翻符で計算</button>
+        <button type="button" class="mode-toggle-btn" data-mode="direct">点数を直接入力</button>
+      </div>
       <div id="hanfu-picker"></div>
+      <div id="direct-picker" class="direct-input-box" hidden></div>
+
       <div id="riichi-picker"></div>
       <p id="tsumo-preview" class="preview-text"></p>
       <div class="modal-actions">
@@ -663,9 +741,39 @@ function openTsumoModal() {
   `);
 
   let winnerSeat = null;
+  let mode = "hanfu";
   let handInfo = { han: 3, fu: 30, yakumanMulti: 1 };
 
   const winnerBtns = box.querySelector("#winner-buttons");
+  const hanfuBox = box.querySelector("#hanfu-picker");
+  const directBox = box.querySelector("#direct-picker");
+
+  function renderDirectFields() {
+    const isDealerWin = winnerSeat !== null && isDealerSeat(winnerSeat);
+    if (winnerSeat === null) {
+      directBox.innerHTML = `<p class="hint-text">先に和了者を選んでください。</p>`;
+      return;
+    }
+    if (isDealerWin) {
+      directBox.innerHTML = `
+        <label class="picker-label">子3人がそれぞれ支払う点数（本場は自動で加算されます）</label>
+        <input type="number" id="direct-each" class="number-input" step="100" min="0" placeholder="例: 4000">
+      `;
+    } else {
+      directBox.innerHTML = `
+        <div class="direct-input-row">
+          <label class="picker-label">親が支払う点数（本場は自動で加算されます）</label>
+          <input type="number" id="direct-dealer" class="number-input" step="100" min="0" placeholder="例: 2000">
+        </div>
+        <div class="direct-input-row">
+          <label class="picker-label">子2人がそれぞれ支払う点数（本場は自動で加算されます）</label>
+          <input type="number" id="direct-other" class="number-input" step="100" min="0" placeholder="例: 1000">
+        </div>
+      `;
+    }
+    directBox.querySelectorAll("input").forEach((inp) => inp.addEventListener("input", updatePreview));
+  }
+
   function renderChoices() {
     winnerBtns.innerHTML = "";
     state.seats.forEach((pid, idx) => {
@@ -674,19 +782,50 @@ function openTsumoModal() {
       wb.addEventListener("click", () => {
         winnerSeat = idx;
         renderChoices();
+        renderDirectFields();
       });
       winnerBtns.appendChild(wb);
     });
     updatePreview();
   }
 
+  box.querySelectorAll(".mode-toggle-btn").forEach((b) => {
+    if (b.dataset.mode === mode) b.classList.add("mode-toggle-btn-selected");
+    b.addEventListener("click", () => {
+      mode = b.dataset.mode;
+      box.querySelectorAll(".mode-toggle-btn").forEach((x) => x.classList.remove("mode-toggle-btn-selected"));
+      b.classList.add("mode-toggle-btn-selected");
+      hanfuBox.hidden = mode !== "hanfu";
+      directBox.hidden = mode !== "direct";
+      updatePreview();
+    });
+  });
+
   const riichiBox = box.querySelector("#riichi-picker");
   const riichiSelected = buildRiichiPicker(riichiBox, [0, 1, 2, 3]);
 
-  buildHanFuPicker(box.querySelector("#hanfu-picker"), (info) => {
+  buildHanFuPicker(hanfuBox, (info) => {
     handInfo = info;
     updatePreview();
   });
+
+  renderDirectFields();
+
+  function getBasePaymentsAndLabel() {
+    const isDealerWin = winnerSeat !== null && isDealerSeat(winnerSeat);
+    if (mode === "direct") {
+      if (isDealerWin) {
+        const each = Math.max(0, Number(box.querySelector("#direct-each")?.value) || 0);
+        return { basePayments: { type: "dealer", each }, label: "点数入力" };
+      }
+      const dealerPay = Math.max(0, Number(box.querySelector("#direct-dealer")?.value) || 0);
+      const otherPay = Math.max(0, Number(box.querySelector("#direct-other")?.value) || 0);
+      return { basePayments: { type: "nondealer", dealerPay, otherPay }, label: "点数入力" };
+    }
+    const { base, label } = calcBase(handInfo.han, handInfo.fu, state.settings.kiriageMangan, handInfo.yakumanMulti);
+    const basePayments = tsumoBaseFromHanFu(base, isDealerWin);
+    return { basePayments, label: label || `${handInfo.han}翻${handInfo.fu}符` };
+  }
 
   function updatePreview() {
     const preview = box.querySelector("#tsumo-preview");
@@ -694,12 +833,12 @@ function openTsumoModal() {
       preview.textContent = "";
       return;
     }
-    const { base, label } = calcBase(handInfo.han, handInfo.fu, state.settings.kiriageMangan, handInfo.yakumanMulti);
-    const result = calcTsumoPayments(base, isDealerSeat(winnerSeat), state.honba);
+    const { basePayments, label } = getBasePaymentsAndLabel();
+    const result = calcTsumoPayments(basePayments, state.honba);
     const text =
       result.type === "dealer"
-        ? `${label || handInfo.han + "翻" + handInfo.fu + "符"} → 子全員 ${result.each.toLocaleString("ja-JP")}点ずつ`
-        : `${label || handInfo.han + "翻" + handInfo.fu + "符"} → 親 ${result.dealerPay.toLocaleString("ja-JP")}点 / 子 ${result.otherPay.toLocaleString("ja-JP")}点ずつ`;
+        ? `${label} → 子全員 ${result.each.toLocaleString("ja-JP")}点ずつ`
+        : `${label} → 親 ${result.dealerPay.toLocaleString("ja-JP")}点 / 子 ${result.otherPay.toLocaleString("ja-JP")}点ずつ`;
     preview.textContent = text;
   }
 
@@ -711,11 +850,16 @@ function openTsumoModal() {
       alert("和了者を選んでください");
       return;
     }
+    const { basePayments, label } = getBasePaymentsAndLabel();
+    const hasZero = basePayments.type === "dealer" ? basePayments.each <= 0 : basePayments.dealerPay <= 0 || basePayments.otherPay <= 0;
+    if (mode === "direct" && hasZero) {
+      alert("支払い点数を入力してください");
+      return;
+    }
     finalizeTsumo({
       winnerSeat,
-      han: handInfo.han,
-      fu: handInfo.fu,
-      yakumanMulti: handInfo.yakumanMulti,
+      basePayments,
+      label,
       riichiSeats: Array.from(riichiSelected),
     });
     closeModal();
