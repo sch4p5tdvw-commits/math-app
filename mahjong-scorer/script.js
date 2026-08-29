@@ -458,6 +458,7 @@ function startNewSession(names, startPoints, kiriage) {
 // ---------- 卓画面 ----------
 
 let swapSelection = null; // 待機列から選ばれたプレイヤーID
+let seatSelection = null; // 席どうしの入れ替えで選ばれた席番号
 let archiveBackTarget = "screen-setup"; // 過去の記録画面から「戻る」で戻る先
 let expandedArchiveIds = new Set(); // 過去の記録画面で詳細を開いている対局
 
@@ -473,7 +474,7 @@ function renderTable() {
     const p = getPlayer(pid);
     const wind = seatWind(idx);
     const card = el(`
-      <div class="seat-card ${isDealerSeat(idx) ? "seat-dealer" : ""}" data-seat="${idx}">
+      <div class="seat-card ${isDealerSeat(idx) ? "seat-dealer" : ""} ${seatSelection === idx ? "seat-card-selected" : ""}" data-seat="${idx}">
         <div class="seat-wind">${wind}${isDealerSeat(idx) ? "（親）" : ""}</div>
         <div class="seat-name">${escapeHtml(p.name)}</div>
         <div class="seat-score">${p.score.toLocaleString("ja-JP")}</div>
@@ -482,6 +483,11 @@ function renderTable() {
     card.addEventListener("click", () => handleSeatClick(idx));
     grid.appendChild(card);
   });
+
+  document.getElementById("seat-hint").textContent =
+    seatSelection !== null
+      ? `${getPlayer(state.seats[seatSelection]).name} を選択中。入れ替えたい席をタップしてください。`
+      : "席をタップすると、席どうしの入れ替えができます。";
 
   const waitingBox = document.getElementById("waiting-box");
   const waitingList = document.getElementById("waiting-list");
@@ -497,6 +503,7 @@ function renderTable() {
       `);
       chip.addEventListener("click", () => {
         swapSelection = swapSelection === pid ? null : pid;
+        seatSelection = null; // 待機中の人を選んだら席の選択は解除する
         renderTable();
       });
       waitingList.appendChild(chip);
@@ -509,13 +516,32 @@ function renderTable() {
 }
 
 function handleSeatClick(seatIdx) {
-  if (!swapSelection) return;
-  const outgoingId = state.seats[seatIdx];
-  const incomingId = swapSelection;
-  state.seats[seatIdx] = incomingId;
-  state.waitingQueue = state.waitingQueue.filter((id) => id !== incomingId);
-  state.waitingQueue.push(outgoingId);
-  swapSelection = null;
+  // 待機中の人を選んでいるときは、その人と交代する（これまでどおり）
+  if (swapSelection) {
+    const outgoingId = state.seats[seatIdx];
+    const incomingId = swapSelection;
+    state.seats[seatIdx] = incomingId;
+    state.waitingQueue = state.waitingQueue.filter((id) => id !== incomingId);
+    state.waitingQueue.push(outgoingId);
+    swapSelection = null;
+    seatSelection = null;
+    renderTable();
+    return;
+  }
+
+  // 席どうしの入れ替え。1回目のタップで選び、2回目のタップで入れ替える。
+  if (seatSelection === null) {
+    seatSelection = seatIdx;
+  } else if (seatSelection === seatIdx) {
+    seatSelection = null;
+  } else {
+    const a = seatSelection;
+    const b = seatIdx;
+    const tmp = state.seats[a];
+    state.seats[a] = state.seats[b];
+    state.seats[b] = tmp;
+    seatSelection = null;
+  }
   renderTable();
 }
 
@@ -1102,6 +1128,18 @@ function parseSpreadsheetImport(text) {
   const lines = text.split(/\r?\n/).filter((line) => line.trim() !== "");
   if (lines.length < 2) {
     return { entries: [], warnings: ["データが見つかりませんでした。1行目に名前、2行目以降に日付と収支を貼り付けてください。"] };
+  }
+
+  // 空欄が「その回は不参加」を表すので、列の位置がずれると誰が出ていたのかが
+  // 変わってしまう。タブが失われた貼り付けはスペースでは復元できないため、
+  // 間違ったまま取り込まずにここで止める。
+  if (!lines[0].includes("\t")) {
+    return {
+      entries: [],
+      warnings: [
+        "列の区切り（タブ）が見つかりませんでした。表としてコピーされていないため、誰が参加していたかを正しく判定できません。スプレッドシートのセル範囲を選んでコピーし直して、そのまま貼り付けてください。",
+      ],
+    };
   }
 
   const names = lines[0].split("\t").map((s) => s.trim()).filter((s) => s !== "");

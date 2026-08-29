@@ -50,7 +50,12 @@ html, body {
   margin: 0 auto;
   min-height: 100vh;
   padding: 16px;
-  padding-bottom: 40px;
+  /* ホーム画面から起動すると（black-translucent + viewport-fit=cover）
+     内容が時刻や電波表示の下に潜り込むので、その分を空けておく */
+  padding-top: calc(16px + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(40px + env(safe-area-inset-bottom, 0px));
+  padding-left: calc(16px + env(safe-area-inset-left, 0px));
+  padding-right: calc(16px + env(safe-area-inset-right, 0px));
 }
 
 .screen[hidden] {
@@ -274,6 +279,11 @@ html, body {
 .seat-card.seat-dealer {
   border-color: var(--gold);
 }
+.seat-card.seat-card-selected {
+  border-color: #2f7fd0;
+  background: #e4f0fb;
+  box-shadow: 0 0 0 3px rgba(47, 127, 208, 0.35);
+}
 .seat-wind {
   font-size: 0.8rem;
   color: #777;
@@ -323,6 +333,11 @@ html, body {
 .hint-dark {
   color: #666;
   margin-bottom: 8px;
+}
+.seat-hint {
+  color: var(--cream);
+  text-align: center;
+  margin: 0 0 12px;
 }
 
 .action-grid {
