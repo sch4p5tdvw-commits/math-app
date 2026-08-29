@@ -1,0 +1,510 @@
+:root {
+  --felt: #0b5d3b;
+  --felt-dark: #084a30;
+  --gold: #d4af37;
+  --cream: #faf6ec;
+  --ink: #1c2b22;
+  --danger: #c0392b;
+  --positive: #1b7a3d;
+  --negative: #c0392b;
+  --radius: 14px;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--felt);
+  color: var(--ink);
+  font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+  padding: 16px;
+  padding-bottom: 40px;
+}
+
+.screen[hidden] {
+  display: none;
+}
+
+.card {
+  background: var(--cream);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+
+.app-title {
+  margin: 0 0 8px;
+  font-size: 1.5rem;
+  text-align: center;
+  color: var(--felt-dark);
+}
+
+.lead {
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: #444;
+  margin-bottom: 16px;
+}
+
+.section-title {
+  font-size: 1rem;
+  margin: 20px 0 8px;
+  color: var(--felt-dark);
+  border-left: 4px solid var(--gold);
+  padding-left: 8px;
+}
+.section-title.small {
+  font-size: 0.9rem;
+  margin: 0 0 8px;
+}
+
+.setup-player-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.player-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: white;
+  border: 1px solid #ccc;
+  border-radius: 20px;
+  padding: 6px 8px 6px 14px;
+  font-size: 0.9rem;
+}
+
+.chip-remove {
+  border: none;
+  background: #eee;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  line-height: 1;
+  cursor: pointer;
+  color: #666;
+  font-size: 1rem;
+}
+
+.inline-form {
+  display: flex;
+  gap: 8px;
+}
+
+.text-input, .number-input {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #ccc;
+  font-size: 1rem;
+  width: 100%;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.setting-row label {
+  font-size: 0.9rem;
+}
+.setting-row .number-input {
+  max-width: 140px;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  margin-bottom: 8px;
+}
+
+.btn {
+  border: none;
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 1rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+.btn-block {
+  width: 100%;
+  margin-top: 16px;
+}
+.btn-primary {
+  background: var(--felt-dark);
+  color: white;
+}
+.btn-secondary {
+  background: #e3e3e3;
+  color: #333;
+}
+.btn-danger {
+  background: var(--danger);
+  color: white;
+}
+.btn-link {
+  background: none;
+  color: var(--cream);
+  text-decoration: underline;
+  width: 100%;
+  margin-top: 12px;
+  font-size: 0.9rem;
+}
+
+.error-text {
+  color: #ffdddd;
+  background: var(--danger);
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  margin-top: 8px;
+}
+
+.resume-box {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px dashed #bbb;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+/* ===== 卓画面 ===== */
+
+.table-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--cream);
+  padding: 4px 4px 12px;
+}
+.round-info {
+  font-size: 1.1rem;
+  font-weight: 700;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.honba-label {
+  font-size: 0.85rem;
+  font-weight: 400;
+  opacity: 0.85;
+}
+.pot-info {
+  margin-left: auto;
+  font-size: 0.85rem;
+  opacity: 0.9;
+}
+.icon-btn {
+  background: none;
+  border: none;
+  color: var(--cream);
+  font-size: 1.3rem;
+  visibility: hidden;
+}
+
+.seat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.seat-card {
+  background: var(--cream);
+  border-radius: var(--radius);
+  padding: 14px;
+  text-align: center;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  border: 2px solid transparent;
+}
+.seat-card.seat-dealer {
+  border-color: var(--gold);
+}
+.seat-wind {
+  font-size: 0.8rem;
+  color: #777;
+  margin-bottom: 4px;
+}
+.seat-name {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.seat-score {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--felt-dark);
+}
+
+.waiting-box {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin-bottom: 14px;
+  color: var(--cream);
+}
+.waiting-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.waiting-chip {
+  background: var(--cream);
+  border: 2px solid transparent;
+  border-radius: 20px;
+  padding: 8px 14px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.waiting-chip-selected {
+  border-color: var(--gold);
+  background: #fff3cc;
+}
+.hint-text {
+  font-size: 0.78rem;
+  opacity: 0.85;
+  margin: 4px 0 0;
+}
+
+.action-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.btn-action {
+  background: var(--gold);
+  color: var(--felt-dark);
+  padding: 16px;
+  font-size: 1.05rem;
+  border-radius: var(--radius);
+}
+.btn-action-sub {
+  background: #e8e0c8;
+  font-size: 0.9rem;
+  padding: 12px;
+}
+.btn-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ===== 記録・順位表 ===== */
+
+.row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.leaderboard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.leaderboard-row {
+  display: grid;
+  grid-template-columns: 2.5em 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  background: white;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+}
+.lb-rank {
+  font-weight: 700;
+  color: var(--felt-dark);
+}
+.lb-score {
+  font-weight: 700;
+}
+.lb-diff.positive {
+  color: var(--positive);
+}
+.lb-diff.negative {
+  color: var(--negative);
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 40vh;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+.history-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  background: white;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+}
+.history-time {
+  color: #888;
+  white-space: nowrap;
+}
+
+/* ===== モーダル ===== */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 50;
+}
+.modal-overlay[hidden] {
+  display: none;
+}
+.modal-box {
+  width: 100%;
+  max-width: 480px;
+}
+.modal-content {
+  background: var(--cream);
+  border-radius: 18px 18px 0 0;
+  padding: 20px;
+  max-height: 88vh;
+  overflow-y: auto;
+}
+.modal-content h2 {
+  margin: 0 0 12px;
+  color: var(--felt-dark);
+}
+
+.picker-label {
+  display: block;
+  font-size: 0.85rem;
+  color: #555;
+  margin: 12px 0 6px;
+}
+
+.seat-select-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.seat-select-btn {
+  border: 2px solid #ccc;
+  background: white;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+.seat-select-btn-selected {
+  border-color: var(--felt-dark);
+  background: #dff0e5;
+}
+
+.picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.picker-row[hidden] {
+  display: none;
+}
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.step-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: var(--felt-dark);
+  color: white;
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+.step-value {
+  min-width: 3.5em;
+  text-align: center;
+  font-weight: 700;
+}
+
+.fu-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.fu-btn {
+  border: 2px solid #ccc;
+  background: white;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.fu-btn-selected {
+  border-color: var(--felt-dark);
+  background: #dff0e5;
+}
+
+.riichi-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.riichi-btn {
+  border: 2px solid #ccc;
+  background: white;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.riichi-btn-selected {
+  border-color: var(--danger);
+  background: #fbe0dc;
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.preview-text {
+  text-align: center;
+  font-weight: 700;
+  color: var(--felt-dark);
+  font-size: 1.05rem;
+  margin: 14px 0;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+.modal-actions .btn {
+  flex: 1;
+}
