@@ -112,9 +112,9 @@ function archiveCurrentSession() {
   // 時点で決まるので、ここで弾かないと全員±0の空の対局が記録されてしまう。
   if (state.history.length === 0) return false;
 
-  const played = state.participated || [];
+  const played = effectiveParticipants();
   const results = state.players
-    .filter((p) => played.includes(p.id))
+    .filter((p) => played.has(p.id))
     .map((p) => ({ name: p.name, score: p.score, diff: p.score - state.settings.startPoints }));
 
   if (results.length === 0) return false;
@@ -231,13 +231,29 @@ function restoreSnapshot(snap) {
   state.participated = snap.participated || [];
 }
 
-// その対局に実際に出た人だけを記録する。ずっと待機していた人まで
-// 「±0で3位」として通算成績に混ぜてしまわないようにするため。
+// その対局に出た人を記録する。ずっと待機していた人まで「±0で3位」として
+// 通算成績に混ぜてしまわないようにするため。
+// ここに入るのは「局が記録された時点で着席していた人」と「点数調整の対象」。
 function markParticipation(playerIds) {
   if (!state.participated) state.participated = [];
   playerIds.forEach((id) => {
     if (!state.participated.includes(id)) state.participated.push(id);
   });
+}
+
+// その対局の参加者。
+// 「局が進んだときに座っていた人」に加えて「いま座っている人」も参加とみなす。
+// 後者がないと、交代で入ったばかりでまだ1局も打っていない人が漏れてしまう。
+// 逆に、1局も進まないうちに控えへ回った人はどちらにも当てはまらず、
+// 座っただけで打っていないので参加者にならない。
+function effectiveParticipants() {
+  const ids = new Set(state.participated || []);
+  (state.seats || []).forEach((id) => ids.add(id));
+  return ids;
+}
+
+function hasParticipated(playerId) {
+  return effectiveParticipants().has(playerId);
 }
 
 function pushHistory(entry, prevSnapshot) {
@@ -511,8 +527,7 @@ function startNewSession(names, startPoints, kiriage) {
     honba: 0,
     pot: 0,
     settings: { startPoints, kiriageMangan: kiriage },
-    // 最初から卓に着いている4人は、それだけで参加あつかいにする
-    participated: players.slice(0, 4).map((p) => p.id),
+    participated: [],
     history: [],
     started: true,
   };
@@ -591,7 +606,6 @@ function handleSeatClick(seatIdx) {
     state.seats[seatIdx] = incomingId;
     state.waitingQueue = state.waitingQueue.filter((id) => id !== incomingId);
     state.waitingQueue.push(outgoingId);
-    markParticipation([incomingId]); // 卓に着いた時点で参加あつかい
     swapSelection = null;
     seatSelection = null;
     renderTable();
@@ -1199,7 +1213,7 @@ function renderHistoryScreen() {
       <div class="leaderboard-row">
         <span class="lb-rank">${i + 1}位</span>
         <span class="lb-name">${escapeHtml(p.name)}${
-          !(state.participated || []).includes(p.id)
+          !hasParticipated(p.id)
             ? "（未参加）"
             : state.waitingQueue.includes(p.id)
               ? "（待機中）"
