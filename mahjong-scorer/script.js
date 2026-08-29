@@ -33,9 +33,12 @@ function playerDiff(p) {
   return p.score - state.settings.startPoints;
 }
 
-function formatDiff(p) {
-  const d = playerDiff(p);
+function formatDiffValue(d) {
   return d === 0 ? "±0" : formatPoints(d);
+}
+
+function formatDiff(p) {
+  return formatDiffValue(playerDiff(p));
 }
 
 function diffClass(p) {
@@ -63,7 +66,16 @@ function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw);
+    const loaded = JSON.parse(raw);
+
+    // participated を持たない古い対局は、これまでの記録で点が動いた人と
+    // いま着席している人から復元する
+    if (loaded && !loaded.participated) {
+      const ids = new Set(loaded.seats || []);
+      (loaded.history || []).forEach((h) => Object.keys(h.deltas || {}).forEach((id) => ids.add(id)));
+      loaded.participated = [...ids];
+    }
+    return loaded;
   } catch (e) {
     return null;
   }
@@ -92,9 +104,21 @@ function saveArchive(archive) {
   localStorage.setItem(ARCHIVE_KEY, JSON.stringify(archive));
 }
 
-// 対局を終了するときに、そのときの記録をまるごと保存しておく
+// 対局を終了するときに、そのときの記録をまるごと保存しておく。
+// 一度も卓に着かなかった人は記録しない（打っていないのに「±0で3位」として
+// 通算成績の対局数や順位回数に数えられてしまうため）。
 function archiveCurrentSession() {
-  const results = state.players.map((p) => ({ name: p.name, score: p.score, diff: p.score - state.settings.startPoints }));
+  // 1局も進んでいない対局は、始めただけで終わったもの。参加者は席に着いた
+  // 時点で決まるので、ここで弾かないと全員±0の空の対局が記録されてしまう。
+  if (state.history.length === 0) return false;
+
+  const played = effectiveParticipants();
+  const results = state.players
+    .filter((p) => played.has(p.id))
+    .map((p) => ({ name: p.name, score: p.score, diff: p.score - state.settings.startPoints }));
+
+  if (results.length === 0) return false;
+
   const hands = state.history.map((h) => ({ time: h.time, summary: h.summary }));
   const entry = {
     id: uid(),
@@ -106,6 +130,7 @@ function archiveCurrentSession() {
   const archive = loadArchive();
   archive.unshift(entry);
   saveArchive(archive);
+  return true;
 }
 
 // ---------- 得点計算 ----------
@@ -190,6 +215,7 @@ function snapshotState() {
     kyoku: state.kyoku,
     honba: state.honba,
     pot: state.pot,
+    participated: state.participated,
   });
 }
 
@@ -202,6 +228,32 @@ function restoreSnapshot(snap) {
   state.kyoku = snap.kyoku;
   state.honba = snap.honba;
   state.pot = snap.pot;
+  state.participated = snap.participated || [];
+}
+
+// その対局に出た人を記録する。ずっと待機していた人まで「±0で3位」として
+// 通算成績に混ぜてしまわないようにするため。
+// ここに入るのは「局が記録された時点で着席していた人」と「点数調整の対象」。
+function markParticipation(playerIds) {
+  if (!state.participated) state.participated = [];
+  playerIds.forEach((id) => {
+    if (!state.participated.includes(id)) state.participated.push(id);
+  });
+}
+
+// その対局の参加者。
+// 「局が進んだときに座っていた人」に加えて「いま座っている人」も参加とみなす。
+// 後者がないと、交代で入ったばかりでまだ1局も打っていない人が漏れてしまう。
+// 逆に、1局も進まないうちに控えへ回った人はどちらにも当てはまらず、
+// 座っただけで打っていないので参加者にならない。
+function effectiveParticipants() {
+  const ids = new Set(state.participated || []);
+  (state.seats || []).forEach((id) => ids.add(id));
+  return ids;
+}
+
+function hasParticipated(playerId) {
+  return effectiveParticipants().has(playerId);
 }
 
 function pushHistory(entry, prevSnapshot) {
@@ -220,6 +272,7 @@ function applyRiichi(riichiSeatIndexes) {
 
 function finalizeRon({ winnerSeat, loserSeat, basePayment, label, riichiSeats }) {
   const prevSnapshot = snapshotState();
+  markParticipation(state.seats);
   applyRiichi(riichiSeats);
 
   const payment = calcRonPayment(basePayment, state.honba);
@@ -258,6 +311,7 @@ function finalizeRon({ winnerSeat, loserSeat, basePayment, label, riichiSeats })
 
 function finalizeTsumo({ winnerSeat, basePayments, label, riichiSeats }) {
   const prevSnapshot = snapshotState();
+  markParticipation(state.seats);
   applyRiichi(riichiSeats);
 
   const result = calcTsumoPayments(basePayments, state.honba);
@@ -298,6 +352,7 @@ function finalizeTsumo({ winnerSeat, basePayments, label, riichiSeats }) {
 
 function finalizeDraw({ tenpaiSeats, riichiSeats }) {
   const prevSnapshot = snapshotState();
+  markParticipation(state.seats);
   applyRiichi(riichiSeats);
 
   const t = tenpaiSeats.length;
@@ -331,6 +386,7 @@ function finalizeDraw({ tenpaiSeats, riichiSeats }) {
 
 function applyManualAdjust(seatOrWaitingId, amount, note) {
   const prevSnapshot = snapshotState();
+  markParticipation([seatOrWaitingId]);
   const p = getPlayer(seatOrWaitingId);
   p.score += amount;
   const summary = `点数調整: ${p.name} ${formatPoints(amount)}点（${note || "理由なし"}）`;
@@ -471,6 +527,7 @@ function startNewSession(names, startPoints, kiriage) {
     honba: 0,
     pot: 0,
     settings: { startPoints, kiriageMangan: kiriage },
+    participated: [],
     history: [],
     started: true,
   };
@@ -1155,9 +1212,15 @@ function renderHistoryScreen() {
     const row = el(`
       <div class="leaderboard-row">
         <span class="lb-rank">${i + 1}位</span>
-        <span class="lb-name">${escapeHtml(p.name)}${state.waitingQueue.includes(p.id) ? "（待機中）" : ""}</span>
+        <span class="lb-name">${escapeHtml(p.name)}${
+          !hasParticipated(p.id)
+            ? "（未参加）"
+            : state.waitingQueue.includes(p.id)
+              ? "（待機中）"
+              : ""
+        }</span>
         <span class="lb-score">${p.score.toLocaleString("ja-JP")}</span>
-        <span class="lb-diff ${diff >= 0 ? "positive" : "negative"}">${formatPoints(diff)}</span>
+        <span class="lb-diff ${diff > 0 ? "positive" : diff < 0 ? "negative" : ""}">${formatDiffValue(diff)}</span>
       </div>
     `);
     leaderboard.appendChild(row);
@@ -1380,9 +1443,9 @@ function renderArchiveScreen() {
           <div class="stat-head">
             <span class="lb-rank">${i + 1}位</span>
             <span class="lb-name">${escapeHtml(s.name)}</span>
-            <span class="lb-diff ${s.totalDiff >= 0 ? "positive" : "negative"}">${formatPoints(s.totalDiff)}</span>
+            <span class="lb-diff ${s.totalDiff > 0 ? "positive" : s.totalDiff < 0 ? "negative" : ""}">${formatDiffValue(s.totalDiff)}</span>
           </div>
-          <div class="stat-sub">${s.sessions}対局・平均${formatPoints(avg)}</div>
+          <div class="stat-sub">${s.sessions}対局・平均${formatDiffValue(avg)}</div>
           <div class="rank-chips" style="grid-template-columns: repeat(${maxRank}, 1fr);">${rankChips.join("")}</div>
         </div>
       `);
@@ -1414,7 +1477,7 @@ function renderArchiveScreen() {
         <button type="button" class="archive-card-header">
           <span class="archive-date">${dateText}</span>
           <span class="archive-summary">${ranked
-            .map((r, i) => `${i + 1}位 ${escapeHtml(r.name)}(${formatPoints(r.diff)})`)
+            .map((r, i) => `${i + 1}位 ${escapeHtml(r.name)}(${formatDiffValue(r.diff)})`)
             .join(" / ")}</span>
         </button>
         <div class="archive-detail" ${isOpen ? "" : "hidden"}></div>
