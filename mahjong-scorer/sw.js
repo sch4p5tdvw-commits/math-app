@@ -1,4 +1,4 @@
-const CACHE_NAME = "mahjong-scorer-cache-v4";
+const CACHE_NAME = "mahjong-scorer-cache-v5";
 const ASSETS = [
   "./",
   "./index.html",

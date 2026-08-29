@@ -51,6 +51,8 @@
         <p>前回の対局が保存されています。</p>
         <button id="resume-btn" class="btn btn-secondary btn-block">前回の続きから再開する</button>
       </div>
+
+      <button id="setup-archive-btn" class="btn btn-link">過去の記録・通算成績を見る</button>
     </div>
   </section>
 
@@ -96,10 +98,27 @@
       </div>
       <div id="leaderboard" class="leaderboard"></div>
 
-      <h2 class="section-title">対局記録</h2>
+      <h2 class="section-title">対局記録（1局ごと）</h2>
       <div id="history-list" class="history-list"></div>
 
-      <button id="end-session-btn" class="btn btn-danger btn-block">対局を終了してリセット</button>
+      <button id="history-archive-btn" class="btn btn-secondary btn-block">過去の記録・通算成績を見る</button>
+      <button id="end-session-btn" class="btn btn-danger btn-block">対局を終了する</button>
+    </div>
+  </section>
+
+  <!-- ================= 過去の記録・通算成績 画面 ================= -->
+  <section id="screen-archive" class="screen" hidden>
+    <div class="card">
+      <div class="row-between">
+        <h2 class="section-title">通算成績</h2>
+        <button id="archive-back-btn" class="btn btn-secondary">戻る</button>
+      </div>
+      <div id="stats-table" class="leaderboard"></div>
+
+      <h2 class="section-title">過去の対局</h2>
+      <div id="archive-list" class="archive-list"></div>
+
+      <button id="archive-clear-btn" class="btn btn-danger btn-block">過去の記録をすべて削除</button>
     </div>
   </section>
 

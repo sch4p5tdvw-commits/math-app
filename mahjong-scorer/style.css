@@ -389,6 +389,58 @@ html, body {
   white-space: nowrap;
 }
 
+.stat-sub {
+  font-size: 0.75rem;
+  color: #777;
+  font-weight: 400;
+}
+
+/* ===== 過去の記録 ===== */
+
+.archive-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.archive-card {
+  background: white;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.archive-card-header {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 10px 12px;
+  cursor: pointer;
+  display: block;
+}
+.archive-date {
+  display: block;
+  font-size: 0.75rem;
+  color: #888;
+  margin-bottom: 2px;
+}
+.archive-summary {
+  display: block;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.archive-detail {
+  padding: 0 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.archive-detail[hidden] {
+  display: none;
+}
+.archive-detail .history-row {
+  background: #f4f4f4;
+}
+
 /* ===== モーダル ===== */
 
 .modal-overlay {

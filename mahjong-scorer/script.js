@@ -3,6 +3,7 @@
 // データはすべて localStorage（この端末のブラウザ内）だけに保存する。
 
 const STORAGE_KEY = "mahjongScorerState_v1";
+const ARCHIVE_KEY = "mahjongScorerArchive_v1";
 const MIN_PLAYERS = 4;
 const MAX_PLAYERS = 6;
 const ROUND_NAMES = ["東", "南", "西", "北"];
@@ -57,6 +58,36 @@ function saveState() {
 function clearState() {
   localStorage.removeItem(STORAGE_KEY);
   state = null;
+}
+
+function loadArchive() {
+  try {
+    const raw = localStorage.getItem(ARCHIVE_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveArchive(archive) {
+  localStorage.setItem(ARCHIVE_KEY, JSON.stringify(archive));
+}
+
+// 対局を終了するときに、そのときの記録をまるごと保存しておく
+function archiveCurrentSession() {
+  const results = state.players.map((p) => ({ name: p.name, score: p.score, diff: p.score - state.settings.startPoints }));
+  const hands = state.history.map((h) => ({ time: h.time, summary: h.summary }));
+  const entry = {
+    id: uid(),
+    endedAt: Date.now(),
+    startPoints: state.settings.startPoints,
+    results,
+    hands,
+  };
+  const archive = loadArchive();
+  archive.unshift(entry);
+  saveArchive(archive);
 }
 
 // ---------- 得点計算 ----------
@@ -401,6 +432,8 @@ function startNewSession(names, startPoints, kiriage) {
 // ---------- 卓画面 ----------
 
 let swapSelection = null; // 待機列から選ばれたプレイヤーID
+let archiveBackTarget = "screen-setup"; // 過去の記録画面から「戻る」で戻る先
+let expandedArchiveIds = new Set(); // 過去の記録画面で詳細を開いている対局
 
 function renderTable() {
   document.getElementById("round-label").textContent = roundLabelText();
@@ -1033,6 +1066,109 @@ function renderHistoryScreen() {
   }
 }
 
+// ---------- 過去の記録・通算成績画面 ----------
+
+function computeCumulativeStats(archive) {
+  const statsByName = new Map();
+  archive.forEach((session) => {
+    const ranked = [...session.results].sort((a, b) => b.score - a.score);
+    ranked.forEach((r, i) => {
+      const rank = i + 1;
+      if (!statsByName.has(r.name)) {
+        statsByName.set(r.name, { name: r.name, sessions: 0, totalDiff: 0, firstCount: 0 });
+      }
+      const s = statsByName.get(r.name);
+      s.sessions += 1;
+      s.totalDiff += r.diff;
+      if (rank === 1) s.firstCount += 1;
+    });
+  });
+  return [...statsByName.values()].sort((a, b) => b.totalDiff - a.totalDiff);
+}
+
+function renderArchiveScreen() {
+  const archive = loadArchive();
+
+  const statsBox = document.getElementById("stats-table");
+  statsBox.innerHTML = "";
+  const stats = computeCumulativeStats(archive);
+  if (stats.length === 0) {
+    statsBox.appendChild(el(`<p class="hint-text">まだ終了した対局がありません。</p>`));
+  } else {
+    stats.forEach((s, i) => {
+      const avg = Math.round(s.totalDiff / s.sessions);
+      const row = el(`
+        <div class="leaderboard-row">
+          <span class="lb-rank">${i + 1}位</span>
+          <span class="lb-name">${escapeHtml(s.name)}<br><span class="stat-sub">${s.sessions}対局・1位${s.firstCount}回・平均${formatPoints(avg)}</span></span>
+          <span class="lb-score"></span>
+          <span class="lb-diff ${s.totalDiff >= 0 ? "positive" : "negative"}">${formatPoints(s.totalDiff)}</span>
+        </div>
+      `);
+      statsBox.appendChild(row);
+    });
+  }
+
+  document.getElementById("archive-clear-btn").hidden = archive.length === 0;
+
+  const listBox = document.getElementById("archive-list");
+  listBox.innerHTML = "";
+  if (archive.length === 0) {
+    listBox.appendChild(el(`<p class="hint-text">過去の対局はまだありません。</p>`));
+    return;
+  }
+
+  archive.forEach((session) => {
+    const ranked = [...session.results].sort((a, b) => b.score - a.score);
+    const dateText = new Date(session.endedAt).toLocaleString("ja-JP", {
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    const isOpen = expandedArchiveIds.has(session.id);
+
+    const card = el(`
+      <div class="archive-card">
+        <button type="button" class="archive-card-header">
+          <span class="archive-date">${dateText}</span>
+          <span class="archive-summary">${ranked
+            .map((r, i) => `${i + 1}位 ${escapeHtml(r.name)}(${formatPoints(r.diff)})`)
+            .join(" / ")}</span>
+        </button>
+        <div class="archive-detail" ${isOpen ? "" : "hidden"}></div>
+      </div>
+    `);
+
+    const detailBox = card.querySelector(".archive-detail");
+    if (session.hands.length === 0) {
+      detailBox.appendChild(el(`<p class="hint-text">記録された局はありません。</p>`));
+    } else {
+      session.hands.forEach((h) => {
+        detailBox.appendChild(
+          el(`
+            <div class="history-row">
+              <div class="history-summary">${escapeHtml(h.summary)}</div>
+              <div class="history-time">${new Date(h.time).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}</div>
+            </div>
+          `)
+        );
+      });
+    }
+
+    card.querySelector(".archive-card-header").addEventListener("click", () => {
+      if (expandedArchiveIds.has(session.id)) {
+        expandedArchiveIds.delete(session.id);
+      } else {
+        expandedArchiveIds.add(session.id);
+      }
+      renderArchiveScreen();
+    });
+
+    listBox.appendChild(card);
+  });
+}
+
 // ---------- 初期化・イベント登録 ----------
 
 function bindTableEvents() {
@@ -1054,7 +1190,8 @@ function bindTableEvents() {
     renderTable();
   });
   document.getElementById("end-session-btn").addEventListener("click", () => {
-    if (confirm("対局を終了し、記録をすべて消去します。よろしいですか？")) {
+    if (confirm("対局を終了します。ここまでの記録は「過去の記録」に保存されます。よろしいですか？")) {
+      archiveCurrentSession();
       clearState();
       setupPlayers = [];
       renderSetupPlayerList();
@@ -1064,6 +1201,31 @@ function bindTableEvents() {
   });
   document.getElementById("modal-overlay").addEventListener("click", (e) => {
     if (e.target.id === "modal-overlay") closeModal();
+  });
+
+  document.getElementById("setup-archive-btn").addEventListener("click", () => {
+    archiveBackTarget = "screen-setup";
+    renderArchiveScreen();
+    showScreen("screen-archive");
+  });
+  document.getElementById("history-archive-btn").addEventListener("click", () => {
+    archiveBackTarget = "screen-history";
+    renderArchiveScreen();
+    showScreen("screen-archive");
+  });
+  document.getElementById("archive-back-btn").addEventListener("click", () => {
+    if (archiveBackTarget === "screen-history") {
+      renderHistoryScreen();
+      showScreen("screen-history");
+    } else {
+      showScreen("screen-setup");
+    }
+  });
+  document.getElementById("archive-clear-btn").addEventListener("click", () => {
+    if (confirm("過去の記録・通算成績をすべて削除します。よろしいですか？")) {
+      localStorage.removeItem(ARCHIVE_KEY);
+      renderArchiveScreen();
+    }
   });
 }
 
