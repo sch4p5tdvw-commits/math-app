@@ -105,15 +105,18 @@ function saveArchive(archive) {
 }
 
 // 対局を終了するときに、そのときの記録をまるごと保存しておく。
-// 一度も卓に出ていない人は記録しない（出ていないのに「±0で3位」として
+// 一度も卓に着かなかった人は記録しない（打っていないのに「±0で3位」として
 // 通算成績の対局数や順位回数に数えられてしまうため）。
 function archiveCurrentSession() {
+  // 1局も進んでいない対局は、始めただけで終わったもの。参加者は席に着いた
+  // 時点で決まるので、ここで弾かないと全員±0の空の対局が記録されてしまう。
+  if (state.history.length === 0) return false;
+
   const played = state.participated || [];
   const results = state.players
     .filter((p) => played.includes(p.id))
     .map((p) => ({ name: p.name, score: p.score, diff: p.score - state.settings.startPoints }));
 
-  // 誰も打っていない対局は記録として意味がないので残さない
   if (results.length === 0) return false;
 
   const hands = state.history.map((h) => ({ time: h.time, summary: h.summary }));
@@ -508,7 +511,8 @@ function startNewSession(names, startPoints, kiriage) {
     honba: 0,
     pot: 0,
     settings: { startPoints, kiriageMangan: kiriage },
-    participated: [],
+    // 最初から卓に着いている4人は、それだけで参加あつかいにする
+    participated: players.slice(0, 4).map((p) => p.id),
     history: [],
     started: true,
   };
@@ -587,6 +591,7 @@ function handleSeatClick(seatIdx) {
     state.seats[seatIdx] = incomingId;
     state.waitingQueue = state.waitingQueue.filter((id) => id !== incomingId);
     state.waitingQueue.push(outgoingId);
+    markParticipation([incomingId]); // 卓に着いた時点で参加あつかい
     swapSelection = null;
     seatSelection = null;
     renderTable();
