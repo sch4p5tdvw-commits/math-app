@@ -198,6 +198,11 @@ html, body {
   margin-top: 12px;
   font-size: 0.9rem;
 }
+/* カードの中はクリーム色の背景なので、同じクリーム色のままだと
+   文字が背景に溶けて見えなくなる */
+.card .btn-link {
+  color: var(--felt-dark);
+}
 
 .error-text {
   color: #ffdddd;
@@ -314,6 +319,10 @@ html, body {
   font-size: 0.78rem;
   opacity: 0.85;
   margin: 4px 0 0;
+}
+.hint-dark {
+  color: #666;
+  margin-bottom: 8px;
 }
 
 .action-grid {
