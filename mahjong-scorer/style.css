@@ -30,6 +30,12 @@
   box-sizing: border-box;
 }
 
+/* ボタンや入力欄はブラウザ既定でOSの標準フォントになり、
+   body で指定した丸ゴシックが継承されないため明示的に合わせる */
+button, input, select, textarea {
+  font-family: inherit;
+}
+
 html, body {
   margin: 0;
   padding: 0;
