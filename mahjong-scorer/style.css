@@ -1,16 +1,16 @@
 @font-face {
-  font-family: "M PLUS Rounded 1c";
+  font-family: "Zen Maru Gothic";
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url("fonts/mplus-rounded-1c-regular.woff2") format("woff2");
+  src: url("fonts/zen-maru-gothic-regular.woff2") format("woff2");
 }
 @font-face {
-  font-family: "M PLUS Rounded 1c";
+  font-family: "Zen Maru Gothic";
   font-style: normal;
   font-weight: 700;
   font-display: swap;
-  src: url("fonts/mplus-rounded-1c-bold.woff2") format("woff2");
+  src: url("fonts/zen-maru-gothic-bold.woff2") format("woff2");
 }
 
 :root {
@@ -35,7 +35,7 @@ html, body {
   padding: 0;
   background: var(--felt);
   color: var(--ink);
-  font-family: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Hiragino Sans", "Yu Gothic", "Noto Sans JP", system-ui, sans-serif;
+  font-family: "Zen Maru Gothic", "Hiragino Maru Gothic ProN", "Hiragino Sans", "Yu Gothic", "Noto Sans JP", system-ui, sans-serif;
   -webkit-tap-highlight-color: transparent;
 }
 

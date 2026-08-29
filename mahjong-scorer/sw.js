@@ -1,4 +1,4 @@
-const CACHE_NAME = "mahjong-scorer-cache-v2";
+const CACHE_NAME = "mahjong-scorer-cache-v3";
 const ASSETS = [
   "./",
   "./index.html",
@@ -7,8 +7,8 @@ const ASSETS = [
   "./manifest.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
-  "./fonts/mplus-rounded-1c-regular.woff2",
-  "./fonts/mplus-rounded-1c-bold.woff2",
+  "./fonts/zen-maru-gothic-regular.woff2",
+  "./fonts/zen-maru-gothic-bold.woff2",
 ];
 
 // このアプリは外部通信を一切行わない。すべてのデータは localStorage に
