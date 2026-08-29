@@ -399,10 +399,51 @@ html, body {
   white-space: nowrap;
 }
 
+.stat-row {
+  background: white;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.stat-head {
+  display: grid;
+  grid-template-columns: 2.5em 1fr auto;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.9rem;
+}
+.stat-head .lb-name {
+  font-weight: 700;
+}
 .stat-sub {
   font-size: 0.75rem;
   color: #777;
   font-weight: 400;
+  margin: 2px 0 0 calc(2.5em + 8px);
+}
+.rank-chips {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+}
+.rank-chip {
+  background: #eef3ee;
+  border-radius: 6px;
+  padding: 3px 2px;
+  text-align: center;
+  line-height: 1.25;
+}
+.rank-chip-label {
+  display: block;
+  font-size: 0.62rem;
+  color: #888;
+}
+.rank-chip b {
+  display: block;
+  color: var(--felt-dark);
+  font-size: 0.85rem;
+}
+.rank-chip-zero {
+  opacity: 0.45;
 }
 
 /* ===== 過去の記録 ===== */

@@ -1203,20 +1203,33 @@ function openImportModal() {
 
 function computeCumulativeStats(archive) {
   const statsByName = new Map();
+  let maxRank = 0;
+
   archive.forEach((session) => {
     const ranked = [...session.results].sort((a, b) => b.score - a.score);
+
+    // 同点のときは同じ順位として数える。そうしないと、並び順という
+    // 中身に関係ないものだけで順位が決まってしまう。
+    const ranks = ranked.map((r, i) => (i > 0 && ranked[i - 1].score === r.score ? null : i + 1));
+    ranks.forEach((v, i) => {
+      if (v === null) ranks[i] = ranks[i - 1];
+    });
+
     ranked.forEach((r, i) => {
-      const rank = i + 1;
+      const rank = ranks[i];
+      if (rank > maxRank) maxRank = rank;
       if (!statsByName.has(r.name)) {
-        statsByName.set(r.name, { name: r.name, sessions: 0, totalDiff: 0, firstCount: 0 });
+        statsByName.set(r.name, { name: r.name, sessions: 0, totalDiff: 0, rankCounts: {} });
       }
       const s = statsByName.get(r.name);
       s.sessions += 1;
       s.totalDiff += r.diff;
-      if (rank === 1) s.firstCount += 1;
+      s.rankCounts[rank] = (s.rankCounts[rank] || 0) + 1;
     });
   });
-  return [...statsByName.values()].sort((a, b) => b.totalDiff - a.totalDiff);
+
+  const list = [...statsByName.values()].sort((a, b) => b.totalDiff - a.totalDiff);
+  return { stats: list, maxRank };
 }
 
 function renderArchiveScreen() {
@@ -1224,18 +1237,26 @@ function renderArchiveScreen() {
 
   const statsBox = document.getElementById("stats-table");
   statsBox.innerHTML = "";
-  const stats = computeCumulativeStats(archive);
+  const { stats, maxRank } = computeCumulativeStats(archive);
   if (stats.length === 0) {
     statsBox.appendChild(el(`<p class="hint-text">まだ終了した対局がありません。</p>`));
   } else {
     stats.forEach((s, i) => {
       const avg = Math.round(s.totalDiff / s.sessions);
+      const rankChips = [];
+      for (let r = 1; r <= maxRank; r++) {
+        const n = s.rankCounts[r] || 0;
+        rankChips.push(`<span class="rank-chip ${n === 0 ? "rank-chip-zero" : ""}"><span class="rank-chip-label">${r}位</span><b>${n}</b></span>`);
+      }
       const row = el(`
-        <div class="leaderboard-row">
-          <span class="lb-rank">${i + 1}位</span>
-          <span class="lb-name">${escapeHtml(s.name)}<br><span class="stat-sub">${s.sessions}対局・1位${s.firstCount}回・平均${formatPoints(avg)}</span></span>
-          <span class="lb-score"></span>
-          <span class="lb-diff ${s.totalDiff >= 0 ? "positive" : "negative"}">${formatPoints(s.totalDiff)}</span>
+        <div class="stat-row">
+          <div class="stat-head">
+            <span class="lb-rank">${i + 1}位</span>
+            <span class="lb-name">${escapeHtml(s.name)}</span>
+            <span class="lb-diff ${s.totalDiff >= 0 ? "positive" : "negative"}">${formatPoints(s.totalDiff)}</span>
+          </div>
+          <div class="stat-sub">${s.sessions}対局・平均${formatPoints(avg)}</div>
+          <div class="rank-chips" style="grid-template-columns: repeat(${maxRank}, 1fr);">${rankChips.join("")}</div>
         </div>
       `);
       statsBox.appendChild(row);
