@@ -27,6 +27,22 @@ function formatPoints(n) {
   return sign + n.toLocaleString("ja-JP");
 }
 
+// 開始時の持ち点からの増減。0のときは「±0」と出して、
+// 記録し忘れではなく「増減なし」だとわかるようにする。
+function playerDiff(p) {
+  return p.score - state.settings.startPoints;
+}
+
+function formatDiff(p) {
+  const d = playerDiff(p);
+  return d === 0 ? "±0" : formatPoints(d);
+}
+
+function diffClass(p) {
+  const d = playerDiff(p);
+  return d > 0 ? "positive" : d < 0 ? "negative" : "";
+}
+
 function roundUp100(x) {
   return Math.ceil(x / 100) * 100;
 }
@@ -486,6 +502,7 @@ function renderTable() {
         <div class="seat-wind">${wind}${isDealerSeat(idx) ? "（親）" : ""}</div>
         <div class="seat-name">${escapeHtml(p.name)}</div>
         <div class="seat-score">${p.score.toLocaleString("ja-JP")}</div>
+        <div class="seat-diff ${diffClass(p)}">${formatDiff(p)}</div>
       </div>
     `);
     card.addEventListener("click", () => handleSeatClick(idx));
@@ -506,7 +523,8 @@ function renderTable() {
       const p = getPlayer(pid);
       const chip = el(`
         <button class="waiting-chip ${swapSelection === pid ? "waiting-chip-selected" : ""}" data-id="${pid}">
-          ${escapeHtml(p.name)}（${p.score.toLocaleString("ja-JP")}）
+          ${escapeHtml(p.name)} ${p.score.toLocaleString("ja-JP")}
+          <span class="chip-diff ${diffClass(p)}">${formatDiff(p)}</span>
         </button>
       `);
       chip.addEventListener("click", () => {
