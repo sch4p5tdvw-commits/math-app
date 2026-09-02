@@ -1,7 +1,8 @@
 "use strict";
 
 // ===== 定数 =====
-const STORE_KEY = "jphistory-v1";
+const STORE_KEY = "jphistory-v2";
+const OLD_STORE_KEY = "jphistory-v1"; // 使用者を分ける前の記録
 const ORDER_COUNT = 5; // 並べかえで出す数
 const CLOZE_COUNT = 5; // 穴うめで出す数
 const TOTAL_Q = 2 + CLOZE_COUNT; // 並べかえ2問＋穴うめ5問
@@ -29,18 +30,23 @@ const PRESETS = [
 const ALL_ERA_IDS = ERAS.map((e) => e.id);
 
 // ===== 状態 =====
-let state = {
-  level: "jhs",
-  eras: ALL_ERA_IDS.slice(),
-  stats: {
-    es: { best: 0, current: 0, plays: 0, perfect: 0 },
-    jhs: { best: 0, current: 0, plays: 0, perfect: 0 }
-  }
+// store … 端末に保存するもの全体。players は「なまえ」ごとの設定と記録。
+let store = {
+  group: null,   // あいことば（記録を分け合うときのキー）
+  current: null, // いま遊んでいる人のなまえ
+  order: [],     // この端末に登録されたなまえ（新しい順）
+  players: {}
 };
 
+let state = null; // store.players[store.current] への参照
 let session = null;
 let audioCtx = null;
 let confettiHandle = null;
+let cloud = null;        // { baseUrl } — クラウドが使えないときは null のまま
+let cloudRecords = {};   // クラウドから読んだ記録（なまえ => 記録）
+let playerEditMode = false;
+let pushTimer = null;
+let legacyPlayer = null; // 使用者を分ける前の記録。最初の1人に引きつぐ
 
 // ===== 小さな道具 =====
 const $ = (id) => document.getElementById(id);
@@ -59,42 +65,273 @@ const pickOne = (list) => list[Math.floor(Math.random() * list.length)];
 const eraById = (id) => ERAS.find((e) => e.id === id);
 
 // ===== 保存 =====
-function load() {
-  let saved = null;
-  try {
-    saved = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
-  } catch (err) {
-    saved = null;
-  }
-  if (!saved) return;
+function blankStats() {
+  return { best: 0, current: 0, plays: 0, perfect: 0 };
+}
 
-  if (saved.level === "es" || saved.level === "jhs") state.level = saved.level;
-  if (Array.isArray(saved.eras)) {
-    const kept = saved.eras.filter((id) => ALL_ERA_IDS.includes(id));
-    if (kept.length >= ORDER_COUNT) state.eras = kept;
+function blankPlayer() {
+  return {
+    level: "jhs",
+    eras: ALL_ERA_IDS.slice(),
+    stats: { es: blankStats(), jhs: blankStats() },
+    updatedAt: 0
+  };
+}
+
+function readJson(key) {
+  try {
+    return JSON.parse(localStorage.getItem(key) || "null");
+  } catch (err) {
+    return null;
+  }
+}
+
+// 保存されていた内容は、そのまま信じずに整えてから取りこむ
+function normalizePlayer(raw) {
+  const p = blankPlayer();
+  if (!raw || typeof raw !== "object") return p;
+  if (raw.level === "es" || raw.level === "jhs") p.level = raw.level;
+  if (Array.isArray(raw.eras)) {
+    const kept = raw.eras.filter((id) => ALL_ERA_IDS.includes(id));
+    if (kept.length >= ORDER_COUNT) p.eras = kept;
   }
   ["es", "jhs"].forEach((key) => {
-    const s = saved.stats && saved.stats[key];
+    const s = raw.stats && raw.stats[key];
     if (!s) return;
-    const target = state.stats[key];
     ["best", "current", "plays", "perfect"].forEach((f) => {
-      if (typeof s[f] === "number" && s[f] >= 0) target[f] = Math.floor(s[f]);
+      if (typeof s[f] === "number" && s[f] >= 0) p.stats[key][f] = Math.floor(s[f]);
     });
     // 記録より今の連続が大きい状態はありえないので、そろえておく
-    if (target.current > target.best) target.best = target.current;
+    if (p.stats[key].current > p.stats[key].best) p.stats[key].best = p.stats[key].current;
   });
+  if (typeof raw.updatedAt === "number" && raw.updatedAt > 0) p.updatedAt = raw.updatedAt;
+  return p;
+}
+
+function load() {
+  const saved = readJson(STORE_KEY);
+  if (saved && typeof saved === "object") {
+    if (typeof saved.group === "string") store.group = saved.group;
+    if (typeof saved.current === "string") store.current = saved.current;
+    if (Array.isArray(saved.order)) store.order = saved.order.filter((n) => typeof n === "string" && n);
+    const players = saved.players && typeof saved.players === "object" ? saved.players : {};
+    Object.keys(players).forEach((name) => {
+      store.players[name] = normalizePlayer(players[name]);
+    });
+  }
+
+  // 名簿と記録のどちらかにしかないなまえを、両方にそろえる
+  Object.keys(store.players).forEach((name) => {
+    if (!store.order.includes(name)) store.order.push(name);
+  });
+  store.order.forEach((name) => {
+    if (!store.players[name]) store.players[name] = blankPlayer();
+  });
+  if (store.current && !store.players[store.current]) store.current = null;
+
+  // 使用者を分ける前の記録は、最初に登録した人に引きつぐ
+  const old = readJson(OLD_STORE_KEY);
+  if (old && typeof old === "object" && store.order.length === 0) legacyPlayer = normalizePlayer(old);
+
+  if (store.current) state = store.players[store.current];
 }
 
 function save() {
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+    localStorage.setItem(STORE_KEY, JSON.stringify(store));
   } catch (err) {
     // 保存できなくても遊べるようにする（シークレットモードなど）
   }
 }
 
+// 記録が変わったときに呼ぶ。更新した時刻を入れてからクラウドへ送る
+function touchPlayer() {
+  if (!state) return;
+  state.updatedAt = Date.now();
+  save();
+  schedulePush();
+}
+
 const stats = () => state.stats[state.level];
 const levelInfo = () => LEVELS.find((l) => l.id === state.level);
+
+// ===== なまえ（使用者）=====
+function usePlayer(name) {
+  if (!store.players[name]) {
+    // いちばん最初の1人には、使用者を分ける前の記録を引きつがせる
+    store.players[name] = legacyPlayer || blankPlayer();
+    legacyPlayer = null;
+    try {
+      localStorage.removeItem(OLD_STORE_KEY);
+    } catch (err) {
+      // 消せなくても実害はない
+    }
+  }
+  store.current = name;
+  store.order = [name].concat(store.order.filter((n) => n !== name)).slice(0, 20);
+  state = store.players[name];
+  save();
+  pushPlayerRecord(name);
+}
+
+function renamePlayer(oldName, newName) {
+  if (!store.players[oldName] || store.players[newName]) return false;
+  store.players[newName] = store.players[oldName];
+  delete store.players[oldName];
+  store.players[newName].updatedAt = Date.now();
+  store.order = store.order.map((n) => (n === oldName ? newName : n));
+  if (store.current === oldName) {
+    store.current = newName;
+    state = store.players[newName];
+  }
+  save();
+  deletePlayerRecord(oldName);
+  pushPlayerRecord(newName);
+  return true;
+}
+
+function deletePlayer(name) {
+  delete store.players[name];
+  store.order = store.order.filter((n) => n !== name);
+  if (store.current === name) {
+    store.current = null;
+    state = null;
+  }
+  save();
+  deletePlayerRecord(name);
+}
+
+// ===== クラウドどうき（Realtime Database の REST API）=====
+// さんすうアプリと同じ Firebase・同じあいことばを使い、
+// groups/<あいことば>/history の下にこのアプリの記録だけを置く。
+// さんすうアプリが読み書きするのは同じグループの players と scores なので、
+// たがいの記録がまざることはない。databaseURL が空のときや通信に失敗した
+// ときは、端末内（localStorage）だけで動く。
+function initCloud() {
+  const config = window.FIREBASE_CONFIG;
+  if (!config || !config.databaseURL) return false;
+  cloud = { baseUrl: config.databaseURL.replace(/\/+$/, "") };
+  return true;
+}
+
+// あいことばはそのままパスに使うので、使えない文字や大文字小文字のゆれを吸収する
+function normalizeGroupCode(raw) {
+  return raw.trim().toLowerCase().replace(/[^0-9a-z぀-ヿ一-鿿]/g, "").slice(0, 20);
+}
+
+// なまえには「.」など、データベースのキーに使えない文字が入ることがある。
+// UTF-8 を16進にして、どの端末でも同じキーになるようにする。
+function nameKey(name) {
+  return Array.from(new TextEncoder().encode(name))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function recordsUrl(suffix) {
+  return `${cloud.baseUrl}/groups/${encodeURIComponent(store.group)}/history${suffix}.json`;
+}
+
+async function fetchRecordsFromCloud() {
+  if (!cloud || !store.group) return {};
+  try {
+    const res = await fetch(recordsUrl(""));
+    if (!res.ok) return {};
+    const data = await res.json();
+    if (!data || typeof data !== "object") return {};
+    const out = {};
+    Object.keys(data).forEach((key) => {
+      const rec = data[key];
+      if (rec && typeof rec === "object" && typeof rec.name === "string" && rec.name) out[rec.name] = rec;
+    });
+    return out;
+  } catch (err) {
+    return {}; // オフラインなど
+  }
+}
+
+async function pushPlayerRecord(name) {
+  if (!cloud || !store.group) return;
+  const p = store.players[name];
+  if (!p) return;
+  const rec = { name, es: p.stats.es, jhs: p.stats.jhs, updatedAt: p.updatedAt || Date.now() };
+  try {
+    await fetch(recordsUrl(`/${nameKey(name)}`), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(rec)
+    });
+    cloudRecords[name] = rec;
+  } catch (err) {
+    // 送れなくても端末内には残る
+  }
+}
+
+async function deletePlayerRecord(name) {
+  if (!cloud || !store.group) return;
+  delete cloudRecords[name];
+  try {
+    await fetch(recordsUrl(`/${nameKey(name)}`), { method: "DELETE" });
+  } catch (err) {
+    // 同上
+  }
+}
+
+// 続けて何問も答えるあいだ送りっぱなしにならないよう、少し待ってから送る
+function schedulePush() {
+  if (!cloud || !store.group || !store.current) return;
+  const name = store.current;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(() => pushPlayerRecord(name), 1200);
+}
+
+// 記録は「大きいほう」を残す。いまの連続正解だけは、あとから書かれたほうを採る。
+function mergeStats(local, remote) {
+  const out = blankStats();
+  ["best", "plays", "perfect"].forEach((f) => {
+    out[f] = Math.max(local[f] || 0, (remote && remote[f]) || 0);
+  });
+  out.current = local.current || 0;
+  return out;
+}
+
+function mergeCloudIntoLocal(records) {
+  Object.keys(records).forEach((name) => {
+    const rec = records[name];
+    if (!store.players[name]) {
+      store.players[name] = blankPlayer();
+      store.order.push(name);
+    }
+    const local = store.players[name];
+    const remoteNewer = (rec.updatedAt || 0) > (local.updatedAt || 0);
+    ["es", "jhs"].forEach((key) => {
+      const merged = mergeStats(local.stats[key], rec[key]);
+      if (remoteNewer) merged.current = (rec[key] && rec[key].current) || 0;
+      if (merged.current > merged.best) merged.best = merged.current;
+      local.stats[key] = merged;
+    });
+    if (remoteNewer) local.updatedAt = rec.updatedAt;
+  });
+  if (store.current) state = store.players[store.current];
+  save();
+}
+
+function needsPush(name) {
+  const rec = cloudRecords[name];
+  if (!rec) return true;
+  const p = store.players[name];
+  if ((p.updatedAt || 0) > (rec.updatedAt || 0)) return true;
+  return ["es", "jhs"].some((key) =>
+    ["best", "plays", "perfect"].some((f) => (p.stats[key][f] || 0) > ((rec[key] && rec[key][f]) || 0))
+  );
+}
+
+// クラウドと端末の記録を合わせる
+async function syncWithCloud() {
+  if (!cloud || !store.group) return;
+  cloudRecords = await fetchRecordsFromCloud();
+  mergeCloudIntoLocal(cloudRecords);
+  await Promise.all(store.order.filter(needsPush).map(pushPlayerRecord));
+}
 
 // ===== 音 =====
 function getAudioContext() {
@@ -229,11 +466,119 @@ function stopCelebration() {
 }
 
 // ===== 画面切りかえ =====
-function showScreen(name) {
-  ["home", "quiz", "result"].forEach((key) => {
-    $(`screen-${key}`).hidden = key !== name;
+function showScreen(id) {
+  document.querySelectorAll(".screen").forEach((el) => {
+    el.hidden = el.id !== id;
   });
   window.scrollTo(0, 0);
+}
+
+// ===== なまえをえらぶ画面 =====
+// 端末に登録したなまえに、同じあいことばでクラウドにある なまえも足して出す。
+// これで新しい端末でも、あいことばを入れれば家族のなまえがそのまま選べる。
+function knownPlayerNames() {
+  const names = store.order.slice();
+  Object.keys(cloudRecords).forEach((name) => {
+    if (!names.includes(name)) names.push(name);
+  });
+  return names;
+}
+
+function bestOf(name) {
+  const p = store.players[name];
+  if (!p) return 0;
+  return Math.max(p.stats.es.best, p.stats.jhs.best);
+}
+
+function renderPlayerList() {
+  const container = $("player-list");
+  container.innerHTML = "";
+  const names = knownPlayerNames();
+  if (names.length === 0) {
+    playerEditMode = false;
+    return;
+  }
+
+  const head = document.createElement("div");
+  head.className = "player-list-head";
+  const label = document.createElement("span");
+  label.className = "player-list-label";
+  label.textContent = playerEditMode ? "なまえを かえる / けす" : "とうろくずみのなまえ";
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "btn-link inline";
+  toggle.textContent = playerEditMode ? "おわり" : "へんしゅう";
+  toggle.addEventListener("click", () => {
+    playerEditMode = !playerEditMode;
+    renderPlayerList();
+  });
+  head.append(label, toggle);
+  container.appendChild(head);
+
+  names.forEach((name) => {
+    const row = document.createElement("div");
+    row.className = "player-row";
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "player-list-item";
+    btn.dataset.name = name;
+    btn.innerHTML = `<span>\u{1F464} ${name}</span><span class="player-best">最高 ${bestOf(name)}問</span>`;
+    // へんしゅう中はえらべないようにして、あやまって始めてしまうのを防ぐ
+    btn.disabled = playerEditMode;
+    row.appendChild(btn);
+
+    if (playerEditMode) {
+      const rename = document.createElement("button");
+      rename.type = "button";
+      rename.className = "player-edit-btn";
+      rename.textContent = "\u270F\uFE0F";
+      rename.title = "なまえをかえる";
+      rename.addEventListener("click", () => handleRenamePlayer(name));
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "player-edit-btn player-delete-btn";
+      remove.textContent = "\u{1F5D1}\uFE0F";
+      remove.title = "けす";
+      remove.addEventListener("click", () => handleDeletePlayer(name));
+
+      row.append(rename, remove);
+    }
+
+    container.appendChild(row);
+  });
+}
+
+function handleRenamePlayer(name) {
+  const input = window.prompt("あたらしい なまえを いれてね", name);
+  if (input === null) return;
+  const next = input.trim().slice(0, 10);
+  if (!next || next === name) return;
+  if (store.players[next]) {
+    window.alert(`「${next}」は もう とうろくされています。`);
+    return;
+  }
+  if (!store.players[name]) store.players[name] = blankPlayer();
+  renamePlayer(name, next);
+  renderPlayerList();
+}
+
+function handleDeletePlayer(name) {
+  const ok = window.confirm(
+    `「${name}」を けしますか？\n` +
+      `さいこう連続正解記録 ${bestOf(name)}問も いっしょに きえます。`
+  );
+  if (!ok) return;
+  deletePlayer(name);
+  renderPlayerList();
+}
+
+function enterPlayerScreen() {
+  stopCelebration();
+  playerEditMode = false;
+  renderPlayerList();
+  showScreen("screen-player");
 }
 
 // ===== ホーム画面 =====
@@ -332,7 +677,15 @@ function renderEraGrid() {
   });
 }
 
+function renderPlayerBar() {
+  $("player-display").textContent = store.current ? `\u{1F464} ${store.current} さん` : "";
+  // クラウドを使っていないときは、あいことばの欄自体を出さない
+  $("group-bar").hidden = !cloud || !store.group;
+  $("group-display").textContent = store.group ? `あいことば: ${store.group}` : "";
+}
+
 function renderHome() {
+  renderPlayerBar();
   renderRecordCard();
   renderLevelChips();
   renderPresetChips();
@@ -628,7 +981,7 @@ function judge() {
   } else {
     s.current = 0;
   }
-  save();
+  touchPlayer();
 
   if (correct) playCorrectSound();
   else playWrongSound();
@@ -655,7 +1008,7 @@ function finishSession() {
   const perfect = session.correct === TOTAL_Q;
   s.plays += 1;
   if (perfect) s.perfect += 1;
-  save();
+  touchPlayer();
 
   $("result-emoji").textContent = perfect ? "🎉🎊🎉" : session.correct >= 5 ? "👏" : "📚";
   $("result-title").textContent = perfect ? "ぜんもん せいかい！" : "けっか";
@@ -700,31 +1053,100 @@ function finishSession() {
     review.innerHTML = "";
   }
 
-  showScreen("result");
+  showScreen("screen-result");
   if (perfect || session.newRecord) celebrate();
 }
 
 // ===== 起動 =====
 function startQuiz() {
-  if (state.eras.length < ORDER_COUNT) return;
+  if (!state || state.eras.length < ORDER_COUNT) return;
   getAudioContext(); // 最初のタップで音を使えるようにする
   stopCelebration();
   buildSession();
-  showScreen("quiz");
+  showScreen("screen-quiz");
   renderQuestion();
 }
 
 function goHome() {
   stopCelebration();
   session = null;
+  if (!store.current) {
+    enterPlayerScreen();
+    return;
+  }
   renderHome();
-  showScreen("home");
+  showScreen("screen-home");
+}
+
+// あいことばが決まったら、クラウドの記録を読みこんでから次の画面へ進む
+async function syncAndRoute() {
+  await syncWithCloud();
+  if (store.current) goHome();
+  else enterPlayerScreen();
 }
 
 function init() {
   load();
-  renderHome();
-  showScreen("home");
+
+  // クラウドが使えるかどうかに関わらず、まず今ある情報で画面を出す
+  const cloudReady = initCloud();
+  if (cloudReady && !store.group) showScreen("screen-group");
+  else if (store.current) goHome();
+  else enterPlayerScreen();
+
+  // クラウドが使えるなら、記録を取りこんでから画面を出しなおす
+  if (cloudReady && store.group) syncAndRoute();
+
+  $("group-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = $("group-code-input");
+    const code = normalizeGroupCode(input.value);
+    if (!code) return;
+    store.group = code;
+    input.value = "";
+    save();
+    await syncAndRoute();
+  });
+
+  $("btn-change-group").addEventListener("click", () => {
+    // 子どもが誤って押しても戻れるよう、消えるものを伝えてから確認する
+    const ok = window.confirm(
+      "ログアウトすると、あいことばと なまえを もういちど いれることになります。\n" +
+        "きろくは のこっているので、おなじ あいことばを いれれば また みられます。\n\n" +
+        "ログアウトしますか？"
+    );
+    if (!ok) return;
+    store.group = null;
+    store.current = null;
+    state = null;
+    cloudRecords = {};
+    save();
+    showScreen("screen-group");
+  });
+
+  $("player-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const input = $("player-name-input");
+    const name = input.value.trim().slice(0, 10);
+    if (!name) return;
+    input.value = "";
+    usePlayer(name);
+    goHome();
+  });
+
+  $("player-list").addEventListener("click", (e) => {
+    const btn = e.target.closest(".player-list-item");
+    if (!btn || playerEditMode) return;
+    usePlayer(btn.dataset.name);
+    goHome();
+  });
+
+  $("btn-switch-player").addEventListener("click", () => {
+    store.current = null;
+    state = null;
+    save();
+    enterPlayerScreen();
+  });
 
   $("btn-start").addEventListener("click", startQuiz);
   $("btn-answer").addEventListener("click", judge);

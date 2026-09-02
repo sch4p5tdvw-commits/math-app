@@ -25,8 +25,45 @@
 
   <main class="main">
 
+    <!-- あいことば画面 -->
+    <section id="screen-group" class="screen" hidden>
+      <div class="card">
+        <h2 class="card-title">ログイン</h2>
+        <p class="hint">
+          あいことばを いれてね。おなじ あいことばを いれた スマホや タブレットで、
+          きろくを いっしょに つかえます。かぞくで きめた あいことばを いれてね。
+        </p>
+        <form id="group-form" class="name-entry" autocomplete="off">
+          <input type="text" id="group-code-input" class="name-input" maxlength="20" placeholder="あいことば" required>
+          <button type="submit" class="btn btn-primary">ログイン</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- なまえとうろく画面 -->
+    <section id="screen-player" class="screen" hidden>
+      <div class="card">
+        <h2 class="card-title">だれが やる？</h2>
+        <div id="player-list" class="player-list"></div>
+        <form id="player-form" class="name-entry" autocomplete="off">
+          <input type="text" id="player-name-input" class="name-input" maxlength="10" placeholder="なまえ（10もじまで）" required>
+          <button type="submit" class="btn btn-primary">とうろくする</button>
+        </form>
+        <p class="hint">なまえごとに、れんぞく正解の記録をべつべつに つけます。</p>
+      </div>
+    </section>
+
     <!-- ホーム画面 -->
-    <section id="screen-home" class="screen">
+    <section id="screen-home" class="screen" hidden>
+      <div class="card bar-card">
+        <span id="player-display"></span>
+        <button type="button" id="btn-switch-player" class="btn-link inline">ちがうひとにかえる</button>
+      </div>
+      <div class="card bar-card" id="group-bar" hidden>
+        <span id="group-display"></span>
+        <button type="button" id="btn-change-group" class="btn btn-secondary btn-compact">ログアウト</button>
+      </div>
+
       <div class="card record-card">
         <div class="record-head">
           <span class="record-label">最大連続正解記録</span>
@@ -109,6 +146,7 @@
 
 <canvas id="confetti" class="confetti" hidden aria-hidden="true"></canvas>
 
+<script src="../firebase-config.js"></script>
 <script src="data.js"></script>
 <script src="script.js"></script>
 </body>
