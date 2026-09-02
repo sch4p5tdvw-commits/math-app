@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>日本の歴史クイズ</title>
+<meta name="description" content="時代の並べかえと穴うめ問題で、日本の歴史の流れをおぼえるアプリ">
+<meta name="theme-color" content="#1f3b63">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="歴史クイズ">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app">
+  <header class="topbar">
+    <h1 class="topbar-title">日本の歴史クイズ</h1>
+    <p class="topbar-sub">ならべかえ と 穴うめで、歴史の流れをおぼえよう</p>
+  </header>
+
+  <main class="main">
+
+    <!-- ホーム画面 -->
+    <section id="screen-home" class="screen">
+      <div class="card record-card">
+        <div class="record-head">
+          <span class="record-label">最大連続正解記録</span>
+          <span class="record-level-tag" id="record-level-tag">中学生</span>
+        </div>
+        <p class="record-value"><span id="record-best">0</span><span class="record-unit">問</span></p>
+        <div class="streak-line">
+          <span>いまの連続正解</span>
+          <strong id="record-current">0</strong><span>問</span>
+        </div>
+        <div class="streak-bar"><span id="streak-bar-fill"></span></div>
+        <p class="record-hint" id="record-hint"></p>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">むずかしさ</h2>
+        <div class="chiprow two" id="level-chips"></div>
+        <p class="hint" id="level-hint"></p>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">出題する時代</h2>
+        <div class="chiprow" id="preset-chips"></div>
+        <div class="era-grid" id="era-grid"></div>
+        <p class="hint" id="range-hint"></p>
+      </div>
+
+      <button type="button" id="btn-start" class="btn btn-primary btn-lg">スタート！</button>
+      <p class="foot-note">
+        全7問 ／ ①時代のならべかえ ②その時代の出来事のならべかえ ③出来事の穴うめ5問
+      </p>
+    </section>
+
+    <!-- 出題画面 -->
+    <section id="screen-quiz" class="screen" hidden>
+      <div class="quizbar">
+        <div class="quizbar-left">
+          <span class="quizbar-progress" id="quiz-progress">1 / 7</span>
+          <div class="dots" id="quiz-dots"></div>
+        </div>
+        <div class="quizbar-right">
+          <span class="streak-chip" id="quiz-streak">🔥 0</span>
+          <span class="best-chip" id="quiz-best">最高 0</span>
+        </div>
+      </div>
+      <p class="record-flag" id="quiz-record-flag" hidden>記録こうしん中！</p>
+
+      <div class="card quiz-card">
+        <p class="q-kind" id="q-kind"></p>
+        <h2 class="q-title" id="q-title"></h2>
+        <p class="q-note" id="q-note"></p>
+        <div id="q-body"></div>
+      </div>
+
+      <div class="feedback" id="q-feedback" hidden></div>
+
+      <button type="button" id="btn-answer" class="btn btn-primary btn-lg" disabled>こたえあわせ</button>
+      <button type="button" id="btn-next" class="btn btn-primary btn-lg" hidden>つぎへ</button>
+      <button type="button" id="btn-quit" class="btn-link">やめてホームへ</button>
+    </section>
+
+    <!-- 結果画面 -->
+    <section id="screen-result" class="screen" hidden>
+      <div class="card result-card">
+        <div class="result-emoji" id="result-emoji">🎊</div>
+        <h2 class="result-title" id="result-title">けっか</h2>
+        <p class="result-message" id="result-message"></p>
+        <p class="result-score"><span id="result-score">0</span> <span class="result-score-unit">/ 7問 せいかい</span></p>
+
+        <div class="result-streak" id="result-streak"></div>
+        <div class="result-review" id="result-review"></div>
+
+        <button type="button" id="btn-again" class="btn btn-primary btn-lg">もういちど</button>
+        <button type="button" id="btn-home" class="btn btn-secondary">さいしょの画面へ</button>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<canvas id="confetti" class="confetti" hidden aria-hidden="true"></canvas>
+
+<script src="data.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
