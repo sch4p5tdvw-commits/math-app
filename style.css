@@ -356,6 +356,26 @@ input {
   color: var(--color-primary-dark);
 }
 
+/* つぎの問題に入れかわるときの ひと呼吸 */
+.quiz-question.swap {
+  animation: question-swap 0.16s ease-out;
+}
+
+@keyframes question-swap {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.quiz-feedback {
+  transition: color 0.12s ease-out;
+}
+
 .answer-display {
   min-height: 2.6rem;
   font-size: 2rem;
@@ -828,7 +848,8 @@ input {
 
 @media (prefers-reduced-motion: reduce) {
   .countdown-num.pop,
-  .celebration {
+  .celebration,
+  .quiz-question.swap {
     animation: none;
   }
 }

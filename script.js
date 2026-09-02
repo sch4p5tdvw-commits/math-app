@@ -32,6 +32,10 @@ const OPS = [
 // 問題数と制限時間は選ばせずに固定する。
 const QUESTION_COUNT = 30;
 const TIME_LIMIT_SEC = 60;
+// こたえあわせを見せてから つぎの問題に移るまでの時間。
+// せいかいのときは すぐ次へ進めたほうがテンポがよい。まちがえたときは
+// 正しいこたえを読む時間がいるので、そのぶん長めに置く。
+const NEXT_QUESTION_DELAY_MS = { correct: 260, wrong: 600 };
 
 // モードごとの「よい記録」のきめかた。
 // もんだいすうモードは タイムが みじかいほど、タイムアタックは 正解数が おおいほど よい。
@@ -87,6 +91,9 @@ let state = null;
 let audioCtx = null;
 let correctAudio = null;
 let wrongAudio = null;
+let soundBuffers = { correct: null, wrong: null };
+let soundsLoading = false;
+let currentSound = null; // いま鳴っている効果音 { source, gain }
 let cloud = null; // { db, api } — クラウドが使えないときは null のまま
 let cloudScoreCache = [];
 let cloudPlayerCache = [];
@@ -339,6 +346,67 @@ function playTone(ctx, freq, startTime, duration, type, peakGain) {
   osc.stop(startTime + duration + 0.02);
 }
 
+// mp3 を Audio 要素で鳴らすと、スマホでは押してから音が出るまでに
+// もたつくことがある。あらかじめ音を読みこんでおき、Web Audio で
+// 鳴らすと待ち時間がほぼなくなる。読みこめなかったときだけ
+// Audio 要素 →（それも駄目なら）合成音、の順にさかのぼる。
+function preloadSounds() {
+  if (soundsLoading) return;
+  soundsLoading = true;
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  [
+    ["correct", "sounds/correct.mp3"],
+    ["wrong", "sounds/wrong.mp3"],
+  ].forEach(([key, url]) => {
+    fetch(url)
+      .then((res) => (res.ok ? res.arrayBuffer() : Promise.reject()))
+      .then((data) => ctx.decodeAudioData(data))
+      .then((buffer) => {
+        soundBuffers[key] = buffer;
+      })
+      .catch(() => {
+        // 読みこめなくても Audio 要素で鳴らせるので、そのまま続行する
+      });
+  });
+}
+
+// 鳴らしっぱなしの音を止める。ぶつっと切れないよう、ほんの少しだけ
+// 音量を下げてから止める。
+function stopCurrentSound(ctx) {
+  if (!currentSound) return;
+  const now = ctx.currentTime;
+  try {
+    currentSound.gain.gain.setValueAtTime(currentSound.gain.gain.value, now);
+    currentSound.gain.gain.linearRampToValueAtTime(0, now + 0.02);
+    currentSound.source.stop(now + 0.03);
+  } catch {
+    // もう止まっていた場合
+  }
+  currentSound = null;
+}
+
+function playBufferedSound(key) {
+  const buffer = soundBuffers[key];
+  if (!buffer) return false;
+  const ctx = getAudioContext();
+  if (!ctx) return false;
+  // つぎつぎ正解したときに音が かさなって にごらないよう、
+  // 前の効果音は止めてから鳴らす（Audio 要素のときと同じ鳴りかた）
+  stopCurrentSound(ctx);
+  const source = ctx.createBufferSource();
+  const gain = ctx.createGain();
+  source.buffer = buffer;
+  source.connect(gain);
+  gain.connect(ctx.destination);
+  source.start();
+  currentSound = { source, gain };
+  source.onended = () => {
+    if (currentSound && currentSound.source === source) currentSound = null;
+  };
+  return true;
+}
+
 function playSynthCorrectSound() {
   const ctx = getAudioContext();
   if (!ctx) return;
@@ -348,6 +416,7 @@ function playSynthCorrectSound() {
 }
 
 function playCorrectSound() {
+  if (playBufferedSound("correct")) return;
   if (!correctAudio) {
     correctAudio = new Audio("sounds/correct.mp3");
     correctAudio.preload = "auto";
@@ -365,6 +434,7 @@ function playSynthWrongSound() {
 }
 
 function playWrongSound() {
+  if (playBufferedSound("wrong")) return;
   if (!wrongAudio) {
     wrongAudio = new Audio("sounds/wrong.mp3");
     wrongAudio.preload = "auto";
@@ -1073,6 +1143,9 @@ function runCountdown(label, onDone) {
 function startQuiz() {
   const level = getSelectedLevel();
   const mode = getSelectedMode();
+  // スタートを押した瞬間に効果音を読みこむ。カウントダウンの
+  // あいだに用意できるので、1問目から待たされない。
+  preloadSounds();
 
   state = {
     level,
@@ -1142,7 +1215,13 @@ function nextQuestion() {
   state.currentAnswer = problem.answer;
   state.inputBuffer = "";
   state.transitioning = false;
-  document.getElementById("quiz-question").textContent = problem.text;
+  const question = document.getElementById("quiz-question");
+  question.textContent = problem.text;
+  // 前の問題と入れかわったことが ふっと分かるように、短く出しなおす。
+  // 同じアニメーションを もう一度 さいせいさせるため、いったん外す。
+  question.classList.remove("swap");
+  void question.offsetWidth;
+  question.classList.add("swap");
   document.getElementById("quiz-feedback").textContent = "";
   document.getElementById("quiz-feedback").className = "quiz-feedback";
   renderAnswerDisplay();
@@ -1171,8 +1250,9 @@ function submitAnswer() {
   state.transitioning = true;
   const value = Number(state.inputBuffer);
   const feedback = document.getElementById("quiz-feedback");
+  const isCorrect = value === state.currentAnswer;
 
-  if (value === state.currentAnswer) {
+  if (isCorrect) {
     state.correct += 1;
     feedback.textContent = "せいかい！ 🎉";
     feedback.className = "quiz-feedback correct";
@@ -1193,7 +1273,7 @@ function submitAnswer() {
     } else {
       nextQuestion();
     }
-  }, 600);
+  }, isCorrect ? NEXT_QUESTION_DELAY_MS.correct : NEXT_QUESTION_DELAY_MS.wrong);
 }
 
 function finishQuiz() {
@@ -1527,11 +1607,23 @@ async function init() {
   document.getElementById("btn-history-back").addEventListener("click", enterStartScreen);
 
   document.getElementById("btn-start").addEventListener("click", startQuiz);
-  document.getElementById("keypad").addEventListener("click", (e) => {
+
+  // 指を はなす まで待たずに、ふれた その瞬間に 反応させる。
+  // click だと touchend のあとになるぶん、わずかに もたついて感じる。
+  const keypad = document.getElementById("keypad");
+  const onKey = (e) => {
     const btn = e.target.closest(".key");
     if (!btn) return;
     handleKeyPress(btn.dataset.key);
-  });
+  };
+  if (window.PointerEvent) {
+    keypad.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || !e.isPrimary) return; // 右クリックや 2本目の指は むし
+      onKey(e);
+    });
+  } else {
+    keypad.addEventListener("click", onKey);
+  }
   document.getElementById("btn-retry").addEventListener("click", () => {
     stopCelebration();
     startQuiz();
