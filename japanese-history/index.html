@@ -92,6 +92,7 @@
       </div>
 
       <button type="button" id="btn-start" class="btn btn-primary btn-lg">スタート！</button>
+      <button type="button" id="btn-stats" class="btn btn-secondary">がくしゅうの記録を見る</button>
       <p class="foot-note">
         全7問 ／ ①時代のならべかえ ②その時代の出来事のならべかえ ③出来事の穴うめ5問
       </p>
@@ -123,6 +124,32 @@
       <button type="button" id="btn-answer" class="btn btn-primary btn-lg" disabled>こたえあわせ</button>
       <button type="button" id="btn-next" class="btn btn-primary btn-lg" hidden>つぎへ</button>
       <button type="button" id="btn-quit" class="btn-link">やめてホームへ</button>
+    </section>
+
+    <!-- がくしゅうの記録画面 -->
+    <section id="screen-stats" class="screen" hidden>
+      <div class="card bar-card">
+        <span id="stats-player"></span>
+        <button type="button" id="btn-stats-back" class="btn-link inline">ホームへもどる</button>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">がくしゅうの記録</h2>
+        <div class="chiprow two" id="stats-level-chips"></div>
+        <div class="stats-summary" id="stats-summary"></div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">時代べつの正答率</h2>
+        <p class="stats-verdict" id="stats-verdict"></p>
+        <div id="era-stats"></div>
+        <p class="hint">
+          ならべかえ②と穴うめ5問（その時代についての問題）から計算します。
+          5つの時代のならべかえは、1つの時代に決められないので べつに数えています。
+        </p>
+      </div>
+
+      <button type="button" id="btn-stats-start" class="btn btn-primary btn-lg">この記録をのばす（スタート）</button>
     </section>
 
     <!-- 結果画面 -->

@@ -69,13 +69,43 @@ function blankStats() {
   return { best: 0, current: 0, plays: 0, perfect: 0 };
 }
 
+// 時代べつの成績。a は出した数、c は正解した数。
+// eraOrder は「5つの時代のならべかえ」（1つの時代に決められない問題）の分。
+function blankDetail() {
+  return { eraOrder: { a: 0, c: 0 }, eras: {} };
+}
+
+function normalizeDetail(raw) {
+  const d = blankDetail();
+  if (!raw || typeof raw !== "object") return d;
+  d.eraOrder = normalizeCount(raw.eraOrder);
+  const eras = raw.eras && typeof raw.eras === "object" ? raw.eras : {};
+  Object.keys(eras).forEach((id) => {
+    // 出題データから消えた時代の記録は読みこまない
+    if (ALL_ERA_IDS.includes(id)) d.eras[id] = normalizeCount(eras[id]);
+  });
+  return d;
+}
+
 function blankPlayer() {
   return {
     level: "jhs",
     eras: ALL_ERA_IDS.slice(),
     stats: { es: blankStats(), jhs: blankStats() },
+    detail: { es: blankDetail(), jhs: blankDetail() },
     updatedAt: 0
   };
+}
+
+function normalizeCount(raw) {
+  const out = { a: 0, c: 0 };
+  if (!raw || typeof raw !== "object") return out;
+  ["a", "c"].forEach((f) => {
+    if (typeof raw[f] === "number" && raw[f] >= 0) out[f] = Math.floor(raw[f]);
+  });
+  // 正解数が出題数をこえることはない
+  if (out.c > out.a) out.c = out.a;
+  return out;
 }
 
 function readJson(key) {
@@ -103,6 +133,9 @@ function normalizePlayer(raw) {
     });
     // 記録より今の連続が大きい状態はありえないので、そろえておく
     if (p.stats[key].current > p.stats[key].best) p.stats[key].best = p.stats[key].current;
+  });
+  ["es", "jhs"].forEach((key) => {
+    p.detail[key] = normalizeDetail(raw.detail && raw.detail[key]);
   });
   if (typeof raw.updatedAt === "number" && raw.updatedAt > 0) p.updatedAt = raw.updatedAt;
   return p;
@@ -253,7 +286,13 @@ async function pushPlayerRecord(name) {
   if (!cloud || !store.group) return;
   const p = store.players[name];
   if (!p) return;
-  const rec = { name, es: p.stats.es, jhs: p.stats.jhs, updatedAt: p.updatedAt || Date.now() };
+  const rec = {
+    name,
+    es: p.stats.es,
+    jhs: p.stats.jhs,
+    detail: p.detail,
+    updatedAt: p.updatedAt || Date.now()
+  };
   try {
     await fetch(recordsUrl(`/${nameKey(name)}`), {
       method: "PUT",
@@ -294,6 +333,27 @@ function mergeStats(local, remote) {
   return out;
 }
 
+// 時代べつの成績は、たくさん解いたほうの端末の数をそのまま採る。
+// 足し合わせると、同じ記録を2回数えてしまうことがあるため。
+function pickBusier(local, remote) {
+  const l = normalizeCount(local);
+  const r = normalizeCount(remote);
+  if (r.a > l.a || (r.a === l.a && r.c > l.c)) return r;
+  return l;
+}
+
+function mergeDetail(local, remote) {
+  const r = normalizeDetail(remote);
+  local.eraOrder = pickBusier(local.eraOrder, r.eraOrder);
+  Object.keys(r.eras).forEach((id) => {
+    local.eras[id] = pickBusier(local.eras[id], r.eras[id]);
+  });
+}
+
+function askedTotal(detail) {
+  return Object.keys(detail.eras).reduce((n, id) => n + detail.eras[id].a, detail.eraOrder.a);
+}
+
 function mergeCloudIntoLocal(records) {
   Object.keys(records).forEach((name) => {
     const rec = records[name];
@@ -309,6 +369,9 @@ function mergeCloudIntoLocal(records) {
       if (merged.current > merged.best) merged.best = merged.current;
       local.stats[key] = merged;
     });
+    ["es", "jhs"].forEach((key) => {
+      mergeDetail(local.detail[key], rec.detail && rec.detail[key]);
+    });
     if (remoteNewer) local.updatedAt = rec.updatedAt;
   });
   if (store.current) state = store.players[store.current];
@@ -320,6 +383,15 @@ function needsPush(name) {
   if (!rec) return true;
   const p = store.players[name];
   if ((p.updatedAt || 0) > (rec.updatedAt || 0)) return true;
+  if (
+    ["es", "jhs"].some((key) => {
+      const remote = rec.detail && rec.detail[key];
+      const asked = askedTotal(normalizeDetail(remote));
+      return askedTotal(p.detail[key]) > asked;
+    })
+  ) {
+    return true;
+  }
   return ["es", "jhs"].some((key) =>
     ["best", "plays", "perfect"].some((f) => (p.stats[key][f] || 0) > ((rec[key] && rec[key][f]) || 0))
   );
@@ -698,6 +770,109 @@ function renderHome() {
     : `時代を ${ORDER_COUNT}つ以上えらんでね（いま ${state.eras.length}つ）。`;
 }
 
+// ===== がくしゅうの記録画面 =====
+function percent(count, asked) {
+  return asked > 0 ? Math.round((count / asked) * 100) : 0;
+}
+
+function barClass(p) {
+  return p >= 80 ? "good" : p >= 50 ? "mid" : "weak";
+}
+
+function statTile(label, value, sub, wide) {
+  return (
+    `<div class="stat-tile${wide ? " wide" : ""}">` +
+    `<span class="stat-label">${label}</span>` +
+    `<span class="stat-value">${value}</span>` +
+    `<span class="stat-sub">${sub}</span></div>`
+  );
+}
+
+function renderStatsLevelChips() {
+  const box = $("stats-level-chips");
+  box.innerHTML = "";
+  LEVELS.forEach((lv) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "chip" + (state.level === lv.id ? " selected" : "");
+    btn.textContent = `${lv.label}の記録`;
+    btn.addEventListener("click", () => {
+      // ここで切りかえた むずかしさは、そのまま次の出題にも使う
+      state.level = lv.id;
+      save();
+      renderStats();
+    });
+    box.appendChild(btn);
+  });
+}
+
+function renderStats() {
+  const d = state.detail[state.level];
+  const s = stats();
+
+  $("stats-player").textContent = store.current ? `\u{1F464} ${store.current} さん` : "";
+  renderStatsLevelChips();
+
+  const asked = askedTotal(d);
+  const correct = Object.keys(d.eras).reduce((n, id) => n + d.eras[id].c, d.eraOrder.c);
+  const rate = percent(correct, asked);
+
+  $("stats-summary").innerHTML =
+    statTile("ぜんたいの正答率", `${rate}%`, `${correct} / ${asked}問`) +
+    statTile("最大連続正解記録", `${s.best}問`, `いま ${s.current}問れんぞく`) +
+    statTile("あそんだ回数", `${s.plays}回`, "1回 = 7問") +
+    statTile("ぜんもん正解", `${s.perfect}回`, "7問すべて正解") +
+    statTile(
+      "5つの時代のならべかえ",
+      `${percent(d.eraOrder.c, d.eraOrder.a)}%`,
+      d.eraOrder.a > 0 ? `${d.eraOrder.c} / ${d.eraOrder.a}問` : "まだ ちょうせんしていません",
+      true
+    );
+
+  // 時代べつ。1セット分（6問）以上といた時代だけ、とくい・にがてを言う
+  const tried = ERAS.filter((era) => (d.eras[era.id] || {}).a > 0);
+  const enough = tried.filter((era) => d.eras[era.id].a >= 6);
+  const rated = enough
+    .map((era) => ({ era, p: percent(d.eras[era.id].c, d.eras[era.id].a) }))
+    .sort((x, y) => y.p - x.p);
+
+  if (rated.length >= 2 && rated[0].p !== rated[rated.length - 1].p) {
+    const top = rated[0];
+    const low = rated[rated.length - 1];
+    $("stats-verdict").innerHTML =
+      `とくいな時代は <strong>${top.era.name}（${top.p}%）</strong>。` +
+      `いま にがてなのは <strong>${low.era.name}（${low.p}%）</strong>。` +
+      `ホームの「出題する時代」で ${low.era.name} をふくむ ちかい時代をえらぶと、` +
+      `にがてなところを 重点的に れんしゅうできます。`;
+  } else if (tried.length === 0) {
+    $("stats-verdict").textContent = "まだ記録がありません。1回あそぶと、ここに時代べつの正答率が出ます。";
+  } else {
+    $("stats-verdict").textContent =
+      "もう少しあそぶと、とくい・にがてな時代がはっきりします（1つの時代を6問以上といた時点から）。";
+  }
+
+  $("era-stats").innerHTML = ERAS.map((era) => {
+    // 数が 0 のままの記録は「まだ」として扱う
+    const box = d.eras[era.id] && d.eras[era.id].a > 0 ? d.eras[era.id] : null;
+    const p = box ? percent(box.c, box.a) : 0;
+    const num = box ? `${box.c} / ${box.a}問　${p}%` : "まだ";
+    return (
+      `<div class="era-stat${box ? "" : " untried"}">` +
+      `<div class="era-stat-head"><span class="era-stat-name">${era.name}</span>` +
+      `<span class="era-stat-num">${num}</span></div>` +
+      `<div class="era-stat-bar"><span class="${barClass(p)}" style="width:${box ? p : 0}%"></span></div>` +
+      `</div>`
+    );
+  }).join("");
+}
+
+function enterStats() {
+  if (!state) return;
+  stopCelebration();
+  renderStats();
+  showScreen("screen-stats");
+}
+
 // ===== 出題づくり =====
 function buildSession() {
   const pool = ERAS.filter((e) => state.eras.includes(e.id));
@@ -719,6 +894,7 @@ function buildSession() {
 
   questions.push({
     kind: "order",
+    subject: "era",
     label: "ならべかえ ①",
     title: "5つの時代を 古いじゅんに ならべよう",
     note: "古いとおもうものから じゅんにタップしてね。",
@@ -736,6 +912,7 @@ function buildSession() {
 
   questions.push({
     kind: "order",
+    subject: "event",
     label: "ならべかえ ②",
     title: `${era.name}の 出来事を 古いじゅんに ならべよう`,
     note: `ここからは ${era.name}（${era.span}）の問題です。`,
@@ -970,6 +1147,18 @@ function judge() {
     answer: q.kind === "order" ? q.correctKeys.map((k, i) => `${i + 1}. ${q.items.find((it) => it.key === k).label}`).join(" → ") : q.event.q.a
   });
 
+  // 時代べつの成績。時代のならべかえは1つの時代に決められないので分けて数える
+  const detail = state.detail[state.level];
+  if (q.kind === "order" && q.subject === "era") {
+    detail.eraOrder.a += 1;
+    if (correct) detail.eraOrder.c += 1;
+  } else {
+    const box = detail.eras[session.era.id] || { a: 0, c: 0 };
+    box.a += 1;
+    if (correct) box.c += 1;
+    detail.eras[session.era.id] = box;
+  }
+
   // 連続正解の記録を、1問ごとにその場で更新する
   const s = stats();
   if (correct) {
@@ -1147,6 +1336,10 @@ function init() {
     save();
     enterPlayerScreen();
   });
+
+  $("btn-stats").addEventListener("click", enterStats);
+  $("btn-stats-back").addEventListener("click", goHome);
+  $("btn-stats-start").addEventListener("click", startQuiz);
 
   $("btn-start").addEventListener("click", startQuiz);
   $("btn-answer").addEventListener("click", judge);
