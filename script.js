@@ -118,10 +118,37 @@ function shuffle(arr) {
   return copy;
 }
 
+// 端末の中の なまえ と きろく は、あいことばごとに べつの場所へしまう。
+// ひとつにまとめてしまうと、べつの あいことばで入ったときに まえの部屋の
+// なまえや きろくが 見えてしまい、さらにそれが 新しい部屋のクラウドへ
+// アップロードされて まざってしまう。
+function scopedKey(baseKey) {
+  const code = getGroupCode();
+  return code ? `${baseKey}__${code}` : baseKey;
+}
+
+// むかしのバージョンは あいことばに関係なく ひとつの場所にしまっていた。
+// いま入っている部屋のものとして 引っこしさせる。
+function migrateLegacyGroupData() {
+  const code = getGroupCode();
+  if (!code) return;
+  [HISTORY_KEY, PLAYER_LIST_KEY, ALIAS_KEY].forEach((baseKey) => {
+    const legacy = localStorage.getItem(baseKey);
+    if (legacy === null) return;
+    const scoped = `${baseKey}__${code}`;
+    // すでに引っこし先にデータがあるなら、そちらを優先して残す
+    if (localStorage.getItem(scoped) === null) localStorage.setItem(scoped, legacy);
+    localStorage.removeItem(baseKey);
+  });
+}
+
 // 記録の意味が変わるアップデート時に、既存の記録を一度だけリセットする
 function maybeResetHistory() {
   if (localStorage.getItem(DATA_VERSION_KEY) !== DATA_VERSION) {
-    localStorage.removeItem(HISTORY_KEY);
+    // どの部屋のものも まとめて消す
+    Object.keys(localStorage)
+      .filter((key) => key === HISTORY_KEY || key.startsWith(`${HISTORY_KEY}__`))
+      .forEach((key) => localStorage.removeItem(key));
     localStorage.setItem(DATA_VERSION_KEY, DATA_VERSION);
   }
 }
@@ -533,14 +560,14 @@ function drawProblem(level) {
 
 function loadHistory() {
   try {
-    return JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
+    return JSON.parse(localStorage.getItem(scopedKey(HISTORY_KEY))) || [];
   } catch {
     return [];
   }
 }
 
 function saveHistory(history) {
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 30)));
+  localStorage.setItem(scopedKey(HISTORY_KEY), JSON.stringify(history.slice(0, 30)));
 }
 
 function saveHistoryEntry(entry) {
@@ -573,7 +600,7 @@ function renderPlayerBar() {
 
 function loadPlayerList() {
   try {
-    return JSON.parse(localStorage.getItem(PLAYER_LIST_KEY)) || [];
+    return JSON.parse(localStorage.getItem(scopedKey(PLAYER_LIST_KEY))) || [];
   } catch {
     return [];
   }
@@ -582,7 +609,7 @@ function loadPlayerList() {
 function rememberPlayer(name) {
   const list = loadPlayerList().filter((n) => n !== name);
   list.unshift(name);
-  localStorage.setItem(PLAYER_LIST_KEY, JSON.stringify(list.slice(0, 20)));
+  localStorage.setItem(scopedKey(PLAYER_LIST_KEY), JSON.stringify(list.slice(0, 20)));
 }
 
 // 端末に登録済みの名前に、クラウド上の同じグループの名前も合わせて出す。
@@ -606,14 +633,14 @@ function allKnownPlayerNames() {
 // それまでの記録が見えなくなってしまう。
 function loadAliases() {
   try {
-    return JSON.parse(localStorage.getItem(ALIAS_KEY)) || {};
+    return JSON.parse(localStorage.getItem(scopedKey(ALIAS_KEY))) || {};
   } catch {
     return {};
   }
 }
 
 function saveAliases(map) {
-  localStorage.setItem(ALIAS_KEY, JSON.stringify(map));
+  localStorage.setItem(scopedKey(ALIAS_KEY), JSON.stringify(map));
 }
 
 // その人が今まで使ったすべてのなまえ（今のなまえ＋まえのなまえ）
@@ -633,7 +660,7 @@ function countRecordsOf(player) {
 function renamePlayer(oldName, newName) {
   // 端末内: 一覧・まえのなまえ・いま選んでいる人 をまとめて付けかえる
   const list = loadPlayerList().map((n) => (n === oldName ? newName : n));
-  localStorage.setItem(PLAYER_LIST_KEY, JSON.stringify(list));
+  localStorage.setItem(scopedKey(PLAYER_LIST_KEY), JSON.stringify(list));
 
   const aliases = loadAliases();
   const previous = aliases[oldName] || [];
@@ -663,7 +690,7 @@ function renamePlayer(oldName, newName) {
 
 function deletePlayer(name) {
   localStorage.setItem(
-    PLAYER_LIST_KEY,
+    scopedKey(PLAYER_LIST_KEY),
     JSON.stringify(loadPlayerList().filter((n) => n !== name))
   );
   const aliases = loadAliases();
@@ -1496,6 +1523,7 @@ async function syncAndRoute() {
 }
 
 async function init() {
+  migrateLegacyGroupData();
   maybeResetHistory();
   renderOpGroups();
 
@@ -1521,6 +1549,10 @@ async function init() {
     const code = normalizeGroupCode(input.value);
     if (!code) return;
     setGroupCode(code);
+    // クラウドを使う前からこの端末にあったデータは、はじめて入った部屋の
+    // ものとして引きつぐ。2回目からは引っこすものがないので、べつの部屋に
+    // 入っても まざらない。
+    migrateLegacyGroupData();
     input.value = "";
     await syncAndRoute();
   });
