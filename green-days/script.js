@@ -8,7 +8,7 @@
 
 // 画面に出す版。直したはずの動きが変わらないとき、スマホが古いものを
 // 掴んでいるのか、直し方が足りないのかを切り分けるために使う。
-const APP_VERSION = "2026-08-27f";
+const APP_VERSION = "2026-08-27g";
 
 const STORAGE_KEY = "greenDays.v1";
 const SNAPSHOT_KEY = "greenDays.snapshots.v1";
@@ -517,7 +517,7 @@ function renderSaleProductOptions() {
   select.innerHTML = "";
   if (db.products.length === 0) {
     const opt = document.createElement("option");
-    opt.textContent = "先に「在庫」タブで商品を登録してください";
+    opt.textContent = "先に「出荷」タブで商品を登録してください";
     opt.disabled = true;
     opt.selected = true;
     select.appendChild(opt);
@@ -1281,7 +1281,7 @@ document.getElementById("btn-import-parse").addEventListener("click", () => {
     return;
   }
   if (db.products.length === 0) {
-    showToast("先に「在庫」タブで商品を登録してください");
+    showToast("先に「出荷」タブで商品を登録してください");
     return;
   }
   if (db.stores.length === 0) {
