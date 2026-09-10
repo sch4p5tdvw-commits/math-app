@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>お買い物マラソン ポイント計算</title>
+<meta name="description" content="買いまわりの倍率と、もらえるポイントを買う前に確かめる計算アプリ">
+<meta name="theme-color" content="#bf0000">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="買いまわり計算">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app">
+  <header class="topbar">
+    <h1 class="topbar-title">お買い物マラソン計算機</h1>
+    <p class="topbar-sub">買いまわりの倍率と もらえるポイントを、買う前に確かめる</p>
+  </header>
+
+  <main class="main">
+
+    <!-- 買いまわりの進み具合 -->
+    <section class="card progress-card">
+      <div class="mult-head">
+        <div class="mult-block">
+          <span class="mult-label">いまの買いまわり倍率</span>
+          <p class="mult-value"><span id="mult-value">1</span><span class="mult-unit">倍</span></p>
+        </div>
+        <div class="shopcount-block">
+          <span class="shopcount-label">対象ショップ</span>
+          <p class="shopcount-value"><span id="shop-count">0</span><span class="shopcount-unit">/10</span></p>
+        </div>
+      </div>
+
+      <div class="steps" id="steps" aria-hidden="true"></div>
+
+      <p class="next-hint" id="next-hint"></p>
+
+      <label class="entry-check">
+        <input type="checkbox" id="entry-check">
+        <span>キャンペーンにエントリーした</span>
+      </label>
+      <p class="entry-warn" id="entry-warn" hidden>エントリーしないと買いまわり分は付きません。買う前に忘れずに。</p>
+    </section>
+
+    <!-- 買うものを入れる -->
+    <section class="card">
+      <h2 class="card-title">買うもの<span class="card-title-note">1ショップ＝1行</span></h2>
+      <div id="shop-list" class="shop-list"></div>
+      <button type="button" id="btn-add-shop" class="btn btn-secondary">＋ ショップを追加</button>
+      <p class="hint">
+        入れるのは<strong>商品代金（税込）</strong>だけ。送料・手数料・ラッピング料は
+        買いまわりの判定にもポイントにも入りません。
+      </p>
+    </section>
+
+    <!-- 倍率の設定 -->
+    <section class="card">
+      <h2 class="card-title">そのほかの倍率</h2>
+
+      <div class="field-row">
+        <label class="field-label" for="spu-rate">SPU（会員プログラム）</label>
+        <div class="field-inputs">
+          <span class="prefix">＋</span>
+          <input type="number" id="spu-rate" class="num-input" inputmode="decimal" step="0.5" min="0" placeholder="0">
+          <span class="suffix">倍</span>
+        </div>
+      </div>
+      <div class="field-row sub">
+        <label class="field-label" for="spu-cap">SPUのポイント上限</label>
+        <div class="field-inputs">
+          <input type="number" id="spu-cap" class="num-input" inputmode="numeric" min="0" placeholder="上限なし">
+          <span class="suffix">P</span>
+        </div>
+      </div>
+
+      <div class="campaign-list" id="campaign-list"></div>
+
+      <div class="preset-row" id="preset-row">
+        <button type="button" class="chip" data-preset="5と0のつく日">＋ 5と0のつく日</button>
+        <button type="button" class="chip" data-preset="ワンダフルデー">＋ ワンダフルデー</button>
+        <button type="button" class="chip" data-preset="勝ったら倍">＋ 勝ったら倍</button>
+        <button type="button" class="chip" data-preset="">＋ そのほか</button>
+      </div>
+      <p class="hint">
+        倍率も上限も開催回ごとに変わります。ここの数字は<strong>そのときのエントリーページを見て
+        入れ直して</strong>ください。空欄の上限は「上限なし」で計算します。
+      </p>
+    </section>
+
+    <!-- 結果 -->
+    <section class="card result-card" id="result-card">
+      <h2 class="card-title">もらえるポイント</h2>
+      <p class="total-point"><span id="total-point">0</span><span class="total-unit">P</span></p>
+      <p class="total-sub" id="total-sub">支払い 0円 ／ 還元率 0.0%</p>
+
+      <table class="breakdown">
+        <tbody id="breakdown-body"></tbody>
+      </table>
+
+      <div id="cap-notes"></div>
+
+      <div class="field-row kaimawari-cap">
+        <label class="field-label" for="kaimawari-cap">買いまわり分の上限</label>
+        <div class="field-inputs">
+          <input type="number" id="kaimawari-cap" class="num-input" inputmode="numeric" min="0" placeholder="上限なし">
+          <span class="suffix">P</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 注意 -->
+    <section class="card note-card">
+      <h2 class="card-title">計算のしかたと注意</h2>
+      <ul class="note-list">
+        <li>ポイントは<strong>税抜きの商品代金 100円ごとに1ポイント</strong>、端数は切り捨てで計算しています。税込で入れた金額を、行ごとの税率（10%／8%）で税抜きに直しています。</li>
+        <li>買いまわりは<strong>1ショップ 税込1,000円以上</strong>が対象。1,000円未満のショップは倍率のカウントに入らず、買いまわり分も付きません（通常ポイントは付きます）。</li>
+        <li>同じショップ名で複数行を入れると、金額を合算して<strong>1ショップ</strong>として数えます。</li>
+        <li>倍率は最大10ショップまで。11ショップ目からは倍率が上がりません。</li>
+        <li>実際の付与は注文ごとの切り捨てや、ショップ独自のポイントもあるため、数ポイントずれることがあります。</li>
+        <li>もらえるのは期間限定ポイントです。使いみちと期限に注意。</li>
+        <li>楽天とは関係のない、個人用の計算ツールです。最新のルールは公式のキャンペーンページで確認してください。</li>
+      </ul>
+      <button type="button" id="btn-clear" class="btn btn-danger">入力をぜんぶ消す</button>
+    </section>
+
+  </main>
+
+  <div class="stickybar" id="stickybar">
+    <div class="sticky-left">
+      <span class="sticky-label">合計</span>
+      <strong id="sticky-point">0</strong><span class="sticky-unit">P</span>
+    </div>
+    <div class="sticky-right">
+      <span id="sticky-mult">1倍</span>
+      <span class="sticky-sep">／</span>
+      <span id="sticky-pay">0円</span>
+    </div>
+  </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>

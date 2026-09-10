@@ -1,0 +1,680 @@
+:root {
+  --crimson: #bf0000;
+  --crimson-dark: #8f0000;
+  --crimson-100: #fdeceb;
+  --gold: #f0a202;
+  --green: #1f7a4d;
+  --green-100: #e6f4ec;
+  --ink: #241f1e;
+  --ink-soft: #6f6663;
+  --ink-faint: #9a918d;
+  --bg: #f6f2f0;
+  --card: #fff;
+  --border: #e7dedb;
+  --radius: 14px;
+  --shadow: 0 2px 10px rgba(120, 40, 30, 0.08);
+  --bar-h: 56px;
+}
+
+* { box-sizing: border-box; }
+
+/* display を持つクラスは hidden 属性だけでは隠れないので明示する */
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", system-ui, sans-serif;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app {
+  max-width: 540px;
+  margin: 0 auto;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ===== ヘッダー ===== */
+.topbar {
+  background: linear-gradient(135deg, var(--crimson-dark), var(--crimson));
+  color: #fff;
+  padding: calc(14px + env(safe-area-inset-top)) 16px 14px;
+  border-bottom: 3px solid var(--gold);
+  text-align: center;
+}
+
+.topbar-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.topbar-sub {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.main {
+  flex: 1;
+  padding: 14px 14px calc(var(--bar-h) + 26px + env(safe-area-inset-bottom));
+}
+
+/* ===== カード ===== */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 15px 14px;
+  margin-bottom: 14px;
+}
+
+.card-title {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--crimson-dark);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.card-title-note {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-faint);
+}
+
+.hint {
+  margin: 10px 0 0;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--ink-soft);
+}
+
+.hint strong { color: var(--ink); }
+
+/* ===== 買いまわりの進み具合 ===== */
+.progress-card {
+  border-top: 3px solid var(--crimson);
+}
+
+.mult-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mult-label, .shopcount-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+
+.mult-value {
+  margin: 2px 0 0;
+  font-size: 44px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--crimson);
+  font-variant-numeric: tabular-nums;
+}
+
+.mult-unit {
+  font-size: 20px;
+  margin-left: 2px;
+}
+
+.shopcount-block { text-align: right; }
+
+.shopcount-value {
+  margin: 2px 0 0;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.shopcount-unit {
+  font-size: 13px;
+  color: var(--ink-faint);
+  margin-left: 1px;
+}
+
+.steps {
+  display: flex;
+  gap: 3px;
+  margin: 12px 0 0;
+}
+
+.step {
+  flex: 1;
+  height: 9px;
+  border-radius: 5px;
+  background: #ece4e2;
+  transition: background 0.15s ease;
+}
+
+.step.on { background: var(--crimson); }
+
+.next-hint {
+  margin: 11px 0 0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ink);
+  background: var(--crimson-100);
+  border-radius: 10px;
+  padding: 9px 11px;
+}
+
+.next-hint.done {
+  background: var(--green-100);
+  color: var(--green);
+  font-weight: 700;
+}
+
+.entry-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 11px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.entry-check input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--crimson);
+}
+
+.entry-warn {
+  margin: 6px 0 0 28px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--crimson);
+}
+
+/* ===== ショップ行 ===== */
+.shop-list { display: flex; flex-direction: column; gap: 10px; }
+
+.shop-row {
+  border: 1px solid var(--border);
+  border-left: 3px solid #ded4d1;
+  border-radius: 11px;
+  padding: 9px 10px 8px;
+  background: #fdfbfa;
+}
+
+.shop-row.eligible {
+  border-left-color: var(--crimson);
+  background: #fff;
+}
+
+.shop-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shop-no {
+  flex: none;
+  width: 20px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ink-faint);
+  text-align: center;
+}
+
+.shop-name {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  border-bottom: 1px dashed var(--border);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 2px;
+  color: var(--ink);
+}
+
+.shop-name:focus {
+  outline: none;
+  border-bottom-color: var(--crimson);
+}
+
+.row-del {
+  flex: none;
+  border: none;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 15px;
+  line-height: 1;
+  padding: 6px;
+  cursor: pointer;
+}
+
+.shop-row-body {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 7px;
+  padding-left: 28px;
+}
+
+.amount-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: #fff;
+  padding: 6px 9px;
+}
+
+.amount-field:focus-within { border-color: var(--crimson); }
+
+.shop-amount {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 800;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  padding: 0;
+}
+
+.shop-amount:focus { outline: none; }
+
+.amount-unit {
+  flex: none;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+/* 数字入力の上下ボタンは、金額欄では邪魔なので消す */
+input[type="number"] { -moz-appearance: textfield; }
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.tax-toggle {
+  flex: none;
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
+}
+
+.tax-btn {
+  border: none;
+  background: #fff;
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--ink-faint);
+  padding: 8px 7px;
+  cursor: pointer;
+}
+
+.tax-btn + .tax-btn { border-left: 1px solid var(--border); }
+
+.tax-btn.on {
+  background: var(--crimson);
+  color: #fff;
+}
+
+.row-note {
+  margin: 6px 0 0 28px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  min-height: 16px;
+}
+
+.shop-row.eligible .row-note { color: var(--crimson-dark); }
+.shop-row.empty .row-note { color: var(--ink-faint); }
+
+/* ===== 設定・キャンペーン ===== */
+.field-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0;
+}
+
+.field-row.sub { padding-top: 0; }
+
+.field-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.field-row.sub .field-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.field-inputs {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.prefix, .suffix {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.num-input {
+  width: 82px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: #fff;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  padding: 7px 9px;
+}
+
+.num-input:focus {
+  outline: none;
+  border-color: var(--crimson);
+}
+
+.campaign-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.campaign-row {
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 8px 10px;
+  background: #fdfbfa;
+}
+
+.campaign-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.campaign-name {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  border-bottom: 1px dashed var(--border);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 4px 2px;
+  color: var(--ink);
+}
+
+.campaign-name:focus {
+  outline: none;
+  border-bottom-color: var(--crimson);
+}
+
+.campaign-body {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 7px;
+}
+
+.campaign-body .num-input { flex: 1; width: auto; min-width: 0; }
+
+.preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.chip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--crimson-dark);
+  padding: 7px 11px;
+  cursor: pointer;
+}
+
+.chip:active { background: var(--crimson-100); }
+
+/* ===== 結果 ===== */
+.result-card { border-top: 3px solid var(--gold); }
+
+.total-point {
+  margin: 0;
+  text-align: center;
+  font-size: 46px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--crimson);
+  font-variant-numeric: tabular-nums;
+}
+
+.total-unit {
+  font-size: 20px;
+  margin-left: 3px;
+}
+
+.total-sub {
+  margin: 2px 0 12px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.breakdown {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.breakdown td {
+  padding: 8px 2px;
+  border-bottom: 1px solid #f1eae8;
+}
+
+.breakdown tr.zero { color: var(--ink-faint); }
+
+.bd-label { font-weight: 700; }
+.bd-rate {
+  text-align: right;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.bd-point {
+  text-align: right;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bd-point span {
+  font-size: 10px;
+  font-weight: 700;
+  margin-left: 2px;
+  color: var(--ink-soft);
+}
+
+.bd-total td {
+  border-bottom: none;
+  border-top: 2px solid var(--border);
+  padding-top: 10px;
+  font-size: 15px;
+  color: var(--crimson-dark);
+}
+
+.cap-note {
+  margin: 9px 0 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--crimson);
+  background: var(--crimson-100);
+  border-radius: 9px;
+  padding: 8px 10px;
+}
+
+.kaimawari-cap {
+  margin-top: 6px;
+  border-top: 1px dashed var(--border);
+  padding-top: 12px;
+}
+
+/* ===== 注意 ===== */
+.note-card { background: #fbf8f7; }
+
+.note-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 11.5px;
+  line-height: 1.8;
+  color: var(--ink-soft);
+}
+
+.note-list li { margin-bottom: 5px; }
+.note-list strong { color: var(--ink); }
+
+/* ===== ボタン ===== */
+.btn {
+  display: block;
+  width: 100%;
+  border: none;
+  border-radius: 11px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  padding: 12px;
+  cursor: pointer;
+}
+
+.btn-secondary {
+  background: #fff;
+  border: 1px solid var(--border);
+  color: var(--crimson-dark);
+  margin-top: 10px;
+}
+
+.btn-secondary:disabled {
+  color: var(--ink-faint);
+  cursor: default;
+}
+
+.btn-danger {
+  background: #fff;
+  border: 1px solid #e8c9c5;
+  color: var(--crimson);
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+/* ===== 下に貼りつくバー ===== */
+.stickybar {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 0;
+  width: 100%;
+  max-width: 540px;
+  height: calc(var(--bar-h) + env(safe-area-inset-bottom));
+  padding: 0 16px env(safe-area-inset-bottom);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -2px 12px rgba(120, 40, 30, 0.07);
+  cursor: pointer;
+}
+
+.sticky-left {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.sticky-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+
+.sticky-left strong {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--crimson);
+  font-variant-numeric: tabular-nums;
+}
+
+.sticky-unit {
+  font-size: 12px;
+  color: var(--crimson);
+  font-weight: 700;
+}
+
+.sticky-right {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.sticky-sep { color: var(--border); margin: 0 3px; }
+
+/* 小さい画面では、金額欄が数字を切らないよう全体を詰める */
+@media (max-width: 360px) {
+  .shop-row-body { padding-left: 0; gap: 6px; }
+  .row-note { margin-left: 0; }
+  .shop-amount { font-size: 16px; }
+  .tax-btn { padding: 7px 5px; font-size: 9.5px; }
+  .mult-value { font-size: 38px; }
+  .total-point { font-size: 40px; }
+}
+
+/* 「上限なし」などの placeholder は、入っている数字と見まちがえないよう
+   小さめの薄い字にする */
+.num-input::placeholder,
+.shop-amount::placeholder {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-faint);
+}
