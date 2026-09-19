@@ -475,6 +475,18 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--green-500);
 }
 .import-row.unmatched { background: #fff8e1; border-color: #ffe0a3; }
 
+/* 新しく商品を作る行。あとから見返したときに、どれが増えたのか分かるように */
+.import-row.new-product { background: #eef6ff; border-color: #bcd8f5; }
+.import-new-badge {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #1565c0;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .import-row-head {
   display: flex;
   align-items: flex-start;
