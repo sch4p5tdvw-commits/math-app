@@ -8,7 +8,7 @@
 
 // 画面に出す版。直したはずの動きが変わらないとき、スマホが古いものを
 // 掴んでいるのか、直し方が足りないのかを切り分けるために使う。
-const APP_VERSION = "2026-08-27g";
+const APP_VERSION = "2026-08-27h";
 
 const STORAGE_KEY = "greenDays.v1";
 const SNAPSHOT_KEY = "greenDays.snapshots.v1";
@@ -1140,6 +1140,58 @@ function findByNameInLine(line, list, namesOf) {
   return best;
 }
 
+/**
+ * 品名らしくない行を弾くための語。あいさつや、お知らせの決まり文句を
+ * 新しい商品として登録してしまわないようにする。
+ */
+const NOT_PRODUCT_WORDS = [
+  "おはよう", "こんにちは", "こんばんは", "ありがとう", "よろしく", "お疲れ",
+  "失礼", "すみません", "確定売上", "売上情報", "お知らせ", "ご注文", "注文",
+  "以上", "以下", "合計", "小計", "総計", "本日", "昨日", "明日",
+  "株式会社", "有限会社", "御中",
+];
+
+/**
+ * 登録されていない品名を行から読み取る。
+ *
+ * 数量・金額・日付はどれも数字から始まり、品名より後ろに来る。だから
+ * 最初の数字より前を品名とみなせば、「オクラ 3点 450円」から「オクラ」が
+ * 取れる。読めないと判断したときは "" を返し、呼ぶ側で捨てる。
+ *
+ * strict は、数量も金額もない「品名だけの行」を見ているとき。雑談を
+ * 品名と読み違えると勝手に商品が増えてしまうので、短い行に限る。
+ */
+function guessProductName(line, strict) {
+  let s = normalizeText(line).trim();
+  if (!s) return "";
+  if (strict && /[。！？!?]/.test(s)) return "";
+
+  // 店名は品名ではない
+  db.stores.forEach((store) => {
+    if (store.name) s = s.split(store.name).join(" ");
+  });
+  // 「田中:」のような話し手の名前を落とす
+  s = s.replace(/^[^\s:：]{1,10}\s*[:：]\s*/, "");
+
+  const cut = s.search(/[\d¥￥@]/);
+  if (cut === 0) return ""; // 数字で始まる行は明細か日付
+  if (cut > 0) s = s.slice(0, cut);
+
+  s = s
+    .replace(/^[\s・･\-‐－—*>＞#＃「」『』]+/, "")
+    .replace(/[\s・･:：,，、。.!！?？~〜\-‐－—×xX*「」『』()（）]+$/, "")
+    .trim();
+
+  if (!s) return "";
+  if (s.length > (strict ? 12 : 20)) return "";
+  if (!/[ぁ-んァ-ヶ一-龠ａ-ｚＡ-Ｚa-zA-Z]/.test(s)) return "";
+  if (NOT_PRODUCT_WORDS.some((w) => s.includes(w))) return "";
+  return s;
+}
+
+/** 商品の選択欄で「まだ登録していない商品」を表す値 */
+const NEW_PRODUCT_VALUE = "__new__";
+
 function findProductInLine(line) {
   return findByNameInLine(line, db.products, productNames);
 }
@@ -1149,7 +1201,7 @@ function findStoreInLine(line) {
 }
 
 /** 売上候補を1件つくる */
-function buildRow({ source, storeId, product, qty, prices, hintUnitPrice, date }) {
+function buildRow({ source, storeId, product, newProductName, qty, prices, hintUnitPrice, date }) {
   const finalQty = qty !== null && qty > 0 ? qty : 1;
   const resolved = resolveUnitPrice(product, finalQty, prices, hintUnitPrice);
   const unitPrice = Number.isFinite(resolved.unitPrice) ? resolved.unitPrice : 0;
@@ -1159,18 +1211,22 @@ function buildRow({ source, storeId, product, qty, prices, hintUnitPrice, date }
   const stated = totalFromText(prices);
   const total = stated !== null ? stated : finalQty * unitPrice;
 
+  // 登録されていない品名は、そのまま新しい商品の候補として持っておく
+  const guessedName = product ? "" : String(newProductName || "").trim();
+
   return {
     id: uid(),
     source,
     storeId: storeId || "",
-    productId: product ? product.id : "",
+    productId: product ? product.id : guessedName ? NEW_PRODUCT_VALUE : "",
+    newProductName: guessedName,
     qty: finalQty,
     unitPrice,
     total,
     // 読み取り違いが疑われるときだけ入る。通常は null
     registeredPrice: resolved.registeredPrice,
     date,
-    include: Boolean(product && storeId),
+    include: Boolean(storeId && (product || guessedName)),
   };
 }
 
@@ -1224,6 +1280,7 @@ function parseChatText(text, defaultStoreId) {
           source: pending.sources.join("　"),
           storeId: pending.storeId,
           product: pending.product,
+          newProductName: pending.newProductName,
           qty,
           prices,
           hintUnitPrice: pending.unitPrice,
@@ -1240,6 +1297,22 @@ function parseChatText(text, defaultStoreId) {
       return;
     }
 
+    // まだ登録していない品名の行も、同じように続きを待つ。
+    // 日付や店名を拾った行は品名ではないので、対象から外す。
+    if (!product && qty === null && prices.length === 0 && !dateFound && !storeFound) {
+      const guessed = guessProductName(line, true);
+      if (guessed) {
+        pending = {
+          product: null,
+          newProductName: guessed,
+          storeId: contextStoreId,
+          unitPrice: null,
+          sources: [line],
+        };
+        return;
+      }
+    }
+
     pending = null;
 
     // 1行で完結する形式。商品も、数量と金額の組もない行は売上ではない
@@ -1250,6 +1323,7 @@ function parseChatText(text, defaultStoreId) {
         source: line,
         storeId: storeFound ? storeFound.id : contextStoreId,
         product,
+        newProductName: product ? "" : guessProductName(line, false),
         qty,
         prices,
         hintUnitPrice: null,
@@ -1280,10 +1354,6 @@ document.getElementById("btn-import-parse").addEventListener("click", () => {
     showToast("文章を貼り付けてください");
     return;
   }
-  if (db.products.length === 0) {
-    showToast("先に「出荷」タブで商品を登録してください");
-    return;
-  }
   if (db.stores.length === 0) {
     showToast("先に「設定」タブで店舗を登録してください");
     return;
@@ -1305,7 +1375,10 @@ function renderImportRows() {
 
   importRows.forEach((row) => {
     const el = document.createElement("div");
-    el.className = "import-row" + (row.productId && row.storeId ? "" : " unmatched");
+    el.className =
+      "import-row" +
+      (rowIsReady({ ...row, include: true }) ? "" : " unmatched") +
+      (row.productId === NEW_PRODUCT_VALUE ? " new-product" : "");
 
     const head = document.createElement("div");
     head.className = "import-row-head";
@@ -1323,6 +1396,13 @@ function renderImportRows() {
     src.className = "import-src";
     src.textContent = row.source;
     head.appendChild(src);
+
+    if (row.productId === NEW_PRODUCT_VALUE) {
+      const badge = document.createElement("span");
+      badge.className = "import-new-badge";
+      badge.textContent = "新しい商品";
+      head.appendChild(badge);
+    }
 
     const del = document.createElement("button");
     del.type = "button";
@@ -1371,6 +1451,14 @@ function renderImportRows() {
     blank.value = "";
     blank.textContent = "（商品をえらぶ）";
     select.appendChild(blank);
+    // 読み取れた品名が未登録なら、そのまま登録できる選択肢を出す
+    if (row.newProductName || row.productId === NEW_PRODUCT_VALUE) {
+      const newOpt = document.createElement("option");
+      newOpt.value = NEW_PRODUCT_VALUE;
+      newOpt.textContent = "＋ 新しく登録する";
+      if (row.productId === NEW_PRODUCT_VALUE) newOpt.selected = true;
+      select.appendChild(newOpt);
+    }
     db.products.forEach((p) => {
       const opt = document.createElement("option");
       opt.value = p.id;
@@ -1389,6 +1477,26 @@ function renderImportRows() {
     });
     productField.appendChild(select);
     grid.appendChild(productField);
+
+    // 新しく登録するときは、読み取った名前をその場で直せるようにする。
+    // 入力のたびに描き直すと文字を打つそばから欄が作り直されるので、
+    // ここでは row に控えるだけにしている。
+    if (row.productId === NEW_PRODUCT_VALUE) {
+      const nameField = document.createElement("label");
+      nameField.className = "field field-wide";
+      nameField.innerHTML = "<span>新しい商品の名前</span>";
+      const nameInput = document.createElement("input");
+      nameInput.type = "text";
+      nameInput.maxLength = 30;
+      nameInput.value = row.newProductName || "";
+      nameInput.placeholder = "例：オクラ";
+      nameInput.addEventListener("input", () => {
+        row.newProductName = nameInput.value;
+        updateImportTotal();
+      });
+      nameField.appendChild(nameInput);
+      grid.appendChild(nameField);
+    }
 
     // 数量
     const qtyField = document.createElement("label");
@@ -1495,27 +1603,89 @@ function recalcRowTotal(row) {
   row.total = row.qty * row.unitPrice;
 }
 
+/** 登録できる状態かどうか。新しい商品は名前が入っていれば足りる */
+function rowIsReady(row) {
+  if (!row.include || !row.storeId || !(row.qty > 0)) return false;
+  if (row.productId === NEW_PRODUCT_VALUE) {
+    return Boolean(String(row.newProductName || "").trim());
+  }
+  return Boolean(row.productId);
+}
+
+/**
+ * 取込で新しく登録する商品を作り、matchKey から引ける表にして返す。
+ * 同じ品名が何行かに分かれていても、商品はひとつにまとめる。
+ */
+function createProductsForImport(rows, createdNames) {
+  const byKey = new Map();
+  rows.forEach((row) => {
+    if (row.productId !== NEW_PRODUCT_VALUE) return;
+    const name = String(row.newProductName || "").trim();
+    if (!name) return;
+    const key = matchKey(name);
+    if (!key || byKey.has(key)) return;
+
+    // 名前を直した結果すでにある商品と同じになることがある。その場合は
+    // 新しく作らず、既にあるほうへ売上をつける。
+    let product = db.products.find((p) =>
+      productNames(p).some((n) => matchKey(n) === key)
+    );
+    if (!product) {
+      product = {
+        id: uid(),
+        name,
+        category: "",
+        aliases: [],
+        price: row.unitPrice > 0 ? row.unitPrice : 0,
+        // 在庫は出荷を記録した時点で店舗ごとに増える。ここでは空にしておく
+        stockByStore: {},
+        createdAt: Date.now(),
+      };
+      db.products.push(product);
+      createdNames.push(name);
+    }
+    byKey.set(key, product);
+  });
+  return byKey;
+}
+
 function updateImportTotal() {
-  const selected = importRows.filter((r) => r.include && r.productId && r.storeId);
+  const selected = importRows.filter(rowIsReady);
   const total = selected.reduce((sum, r) => sum + r.total, 0);
   document.getElementById("import-total").textContent = formatYen(total);
   document.getElementById("import-count").textContent = String(selected.length);
 }
 
 document.getElementById("btn-import-commit").addEventListener("click", () => {
-  const selected = importRows.filter((r) => r.include && r.productId && r.storeId && r.qty > 0);
+  const selected = importRows.filter(rowIsReady);
   if (selected.length === 0) {
     showToast("登録する行がありません");
     return;
   }
 
-  const skipped = importRows.filter((r) => r.include && (!r.productId || !r.storeId)).length;
+  const skipped = importRows.filter((r) => r.include && !rowIsReady(r)).length;
+  const newNames = [];
+  selected.forEach((row) => {
+    if (row.productId !== NEW_PRODUCT_VALUE) return;
+    const name = String(row.newProductName || "").trim();
+    if (name && !newNames.includes(name)) newNames.push(name);
+  });
+
   let message = `${selected.length}件の売上を登録します。よろしいですか？`;
-  if (skipped > 0) message += `\n（店舗または商品が未選択の${skipped}件はスキップされます）`;
+  if (newNames.length > 0) {
+    message += `\n\n未登録だった${newNames.length}品目を商品として登録します：\n${newNames.join("、")}`;
+  }
+  if (skipped > 0) message += `\n\n（店舗または商品が未選択の${skipped}件はスキップされます）`;
   if (!confirm(message)) return;
 
+  const createdNames = [];
+  const newProducts = createProductsForImport(selected, createdNames);
+
   selected.forEach((row) => {
-    const product = findProduct(row.productId);
+    const product =
+      row.productId === NEW_PRODUCT_VALUE
+        ? newProducts.get(matchKey(String(row.newProductName || "").trim()))
+        : findProduct(row.productId);
     const store = findStore(row.storeId);
     if (!product || !store) return;
     db.sales.push({
@@ -1540,7 +1710,11 @@ document.getElementById("btn-import-commit").addEventListener("click", () => {
   const textarea = document.getElementById("import-text");
   textarea.value = "";
   document.getElementById("import-result-card").hidden = true;
-  showToast(`${selected.length}件を登録しました。続けて貼り付けられます`);
+  showToast(
+    createdNames.length > 0
+      ? `${selected.length}件を登録しました（新しい商品：${createdNames.join("、")}）`
+      : `${selected.length}件を登録しました。続けて貼り付けられます`
+  );
   textarea.scrollIntoView({ block: "center" });
 });
 
