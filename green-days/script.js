@@ -8,7 +8,7 @@
 
 // 画面に出す版。直したはずの動きが変わらないとき、スマホが古いものを
 // 掴んでいるのか、直し方が足りないのかを切り分けるために使う。
-const APP_VERSION = "2026-08-27h";
+const APP_VERSION = "2026-08-27i";
 
 const STORAGE_KEY = "greenDays.v1";
 const SNAPSHOT_KEY = "greenDays.snapshots.v1";
@@ -1152,6 +1152,21 @@ const NOT_PRODUCT_WORDS = [
 ];
 
 /**
+ * 数量・金額・日付が始まる位置。かっこの中の数字は品名の一部なので数えない。
+ * 「玉ねぎ（紫2号） 3点」の 3 を指す。見つからなければ -1。
+ */
+function detailStartIndex(str) {
+  let depth = 0;
+  for (let i = 0; i < str.length; i += 1) {
+    const c = str[i];
+    if ("（(【［[".includes(c)) depth += 1;
+    else if ("）)】］]".includes(c)) depth = Math.max(0, depth - 1);
+    else if (depth === 0 && /[\d¥￥@]/.test(c)) return i;
+  }
+  return -1;
+}
+
+/**
  * 登録されていない品名を行から読み取る。
  *
  * 数量・金額・日付はどれも数字から始まり、品名より後ろに来る。だから
@@ -1173,14 +1188,25 @@ function guessProductName(line, strict) {
   // 「田中:」のような話し手の名前を落とす
   s = s.replace(/^[^\s:：]{1,10}\s*[:：]\s*/, "");
 
-  const cut = s.search(/[\d¥￥@]/);
+  const cut = detailStartIndex(s);
   if (cut === 0) return ""; // 数字で始まる行は明細か日付
   if (cut > 0) s = s.slice(0, cut);
 
   s = s
     .replace(/^[\s・･\-‐－—*>＞#＃「」『』]+/, "")
-    .replace(/[\s・･:：,，、。.!！?？~〜\-‐－—×xX*「」『』()（）]+$/, "")
+    .replace(/[\s・･:：,，、。.!！?？~〜\-‐－—×xX*「」『』]+$/, "")
     .trim();
+
+  // 閉じていないかっこは、数量の書き方（「なす（大）3点」を途中で切ったなど）
+  // の名残なので落とす
+  const open = s.search(/[（(【［\[]/);
+  if (open >= 0 && !/[）)】］\]]/.test(s.slice(open))) {
+    s = s.slice(0, open).replace(/[\s・･\-‐－—]+$/, "").trim();
+  }
+
+  // 読み取りの下ごしらえで全角のかっこが半角になる。品名として並べたときに
+  // 「玉ねぎ(紫)」では収まりが悪いので、全角に戻す
+  s = s.replace(/\(/g, "（").replace(/\)/g, "）");
 
   if (!s) return "";
   if (s.length > (strict ? 12 : 20)) return "";
@@ -1192,8 +1218,29 @@ function guessProductName(line, strict) {
 /** 商品の選択欄で「まだ登録していない商品」を表す値 */
 const NEW_PRODUCT_VALUE = "__new__";
 
+/** 「玉ねぎ（紫）」のかっこの中身。かっこが無ければ "" */
+function qualifierInName(nameText) {
+  const m = String(nameText).match(/[（(【［\[]([^）)】］\]]*)[）)】］\]]/);
+  return m ? m[1].trim() : "";
+}
+
+/**
+ * 行に書かれた商品を探す。
+ *
+ * かっこ書きは品種や大きさの区別なので、名前の一部として扱う。そうしないと
+ * 「玉ねぎ（紫）」が、名前を含んでいるというだけで「玉ねぎ」として
+ * 計上されてしまう。かっこの中身まで名前に持つ商品だけを候補にし、
+ * 見つからなければ未登録として扱う（取込画面で新しく登録できる）。
+ */
 function findProductInLine(line) {
-  return findByNameInLine(line, db.products, productNames);
+  const qualifier = qualifierInName(guessProductName(line, false));
+  if (!qualifier) return findByNameInLine(line, db.products, productNames);
+
+  const qualifierKey = matchKey(qualifier);
+  const candidates = db.products.filter((p) =>
+    productNames(p).some((n) => matchKey(n).includes(qualifierKey))
+  );
+  return findByNameInLine(line, candidates, productNames);
 }
 
 function findStoreInLine(line) {
