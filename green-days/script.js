@@ -8,7 +8,7 @@
 
 // 画面に出す版。直したはずの動きが変わらないとき、スマホが古いものを
 // 掴んでいるのか、直し方が足りないのかを切り分けるために使う。
-const APP_VERSION = "2026-08-27i";
+const APP_VERSION = "2026-08-27j";
 
 const STORAGE_KEY = "greenDays.v1";
 const SNAPSHOT_KEY = "greenDays.snapshots.v1";
@@ -1063,11 +1063,12 @@ function unitPriceFromText(product, qty, prices, hintUnitPrice) {
   if (values.length === 1) {
     const price = values[0];
     if (qty === 1) return price; // 1点なら金額がそのまま単価
-    if (price % qty === 0) return price / qty;
-    // 割り切れない＝その日の中で値段の違うものが混ざっている。
-    // 金額を数量で割ると半端な単価になるので、書かれている単価を使う。
-    // 実際の金額は total として別に持つので、売上額はずれない。
+    // 単価が別の行に書いてあるなら、それが値付けした金額。ここで金額を
+    // 数量で割ると、値引きされた分だけ安い単価が記録に残ってしまう。
+    // 「238円 / 3点 702円」を 234円 とはせず、238円 と 値引き -12円 で持つ。
+    // 実際の売上額は total として別に持つので、金額はずれない。
     if (hasHint) return hintUnitPrice;
+    if (price % qty === 0) return price / qty;
     if (product && Number(product.price) > 0) return Number(product.price);
     return price / qty;
   }
@@ -1334,7 +1335,23 @@ function parseChatText(text, defaultStoreId) {
           date: contextDate,
         })
       );
-      pending = null;
+      // ひとつの品名の下に、値段ちがいの明細が続けて並ぶことがある。
+      //
+      //     玉ねぎ
+      //     　 216円
+      //     　　　2点 421円
+      //     　 238円
+      //     　　　3点 702円
+      //
+      // ここで品名を捨てると、2つめから先が行き場をなくして落ちてしまう。
+      // 品名は残したまま、単価と読み取った行だけ戻す。
+      pending = {
+        product: pending.product,
+        newProductName: pending.newProductName,
+        storeId: pending.storeId,
+        unitPrice: null,
+        sources: [pending.sources[0]],
+      };
       return;
     }
 
