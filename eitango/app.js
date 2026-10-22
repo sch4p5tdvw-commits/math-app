@@ -646,3 +646,13 @@ $("csv-file").addEventListener("change", async (e) => {
 
 // ---------------------------------------------------------------
 show("home");
+
+// ホーム画面に置いたまま次の日に開いたときも、今日の数字に直す
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && !$("view-home").hidden) renderHome();
+});
+
+// オフラインでも開けるようにする（https か localhost のときだけ動く）
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
