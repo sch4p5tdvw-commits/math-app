@@ -86,7 +86,7 @@ function importCSVText(text) {
   }
   const result = { added: 0, updated: 0, skipped: [] };
   rows.forEach((r, i) => {
-    const en = (r[0] || "").trim();
+    const en = storeEn(r[0] || "");
     const ja = (r[1] || "").trim();
     if (!en || !ja) {
       result.skipped.push(i + lineOffset);

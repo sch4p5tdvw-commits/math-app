@@ -11,11 +11,12 @@ function shuffle(list) {
 
 // 採点のときに気にしない差をならす。
 // 全角の英字（日本語入力のまま打ったもの）、大文字小文字、’ と '、
-// ～ や ...、文末の . ? ! 、空白の数は同じものとみなす。
+// ～ や ...、文末の . ? ! 、空白の数は同じものとみなす。「be動詞」は be と読む。
 function normAnswer(s) {
   return String(s)
     .normalize("NFKC")
     .toLowerCase()
+    .replace(/be\s*動詞/g, "be ")
     .replace(/[’‘`´]/g, "'")
     .replace(/[～~〜]/g, " ")
     .replace(/\.\.\.|…/g, " ")
@@ -27,11 +28,16 @@ function normAnswer(s) {
 // 正解として受けつける形。
 //   "color / colour" … どちらでも正解
 //   "(be) afraid of" … かっこの中はあってもなくても正解
+//   "be good at"     … be動詞を am / is / are / was / were にして書いても正解
 function acceptedAnswers(en) {
   const out = new Set();
   for (const part of en.split("/")) {
     out.add(normAnswer(part.replace(/[()]/g, "")));
     out.add(normAnswer(part.replace(/\([^)]*\)/g, "")));
+  }
+  for (const a of [...out]) {
+    if (!a.startsWith("be ")) continue;
+    for (const be of ["am", "is", "are", "was", "were"]) out.add(be + a.slice(2));
   }
   out.delete("");
   return out;
@@ -43,11 +49,16 @@ function isCorrectAnswer(input, en) {
 }
 
 // 頭文字だけ見せるヒント。"look for" → "l _ _ _   f _ _"
+// 頭の be動詞はそのまま見せる。"be good at" → "be動詞   g _ _ _   a _"
 function hintFor(en) {
   const main = en.split("/")[0].replace(/[()]/g, "").trim();
-  return main
-    .split(/\s+/)
-    .map((word) => [...word].map((c, i) => (i === 0 || !/[a-z]/i.test(c) ? c : "_")).join(" "))
+  const words = main.split(/\s+/);
+  return words
+    .map((word, n) =>
+      n === 0 && words.length > 1 && word.toLowerCase() === "be"
+        ? "be動詞"
+        : [...word].map((c, i) => (i === 0 || !/[a-z]/i.test(c) ? c : "_")).join(" ")
+    )
     .join("　 ");
 }
 

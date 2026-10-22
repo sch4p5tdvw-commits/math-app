@@ -74,6 +74,7 @@
     <section id="view-study" class="view" hidden>
       <div class="study-head">
         <button type="button" class="btn btn-ghost" id="study-quit">やめる</button>
+        <span class="retry-chip" id="study-retry" hidden>🔁 もう一度</span>
         <span class="study-progress" id="study-progress">1 / 10</span>
       </div>
 
@@ -187,6 +188,7 @@
           <span class="field-label">英語</span>
           <input type="text" class="input" id="edit-en" lang="en" required
                  autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="例）look for">
+          <span class="field-note">be動詞を使う熟語は「be good at」と入力すると「be動詞 good at」と表示されます</span>
         </label>
 
         <label class="field">

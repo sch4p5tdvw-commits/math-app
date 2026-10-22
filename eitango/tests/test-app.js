@@ -41,6 +41,23 @@ function check(name, ok, detail) {
     isCorrectAnswer("be afraid of", "(be) afraid of"),
     isCorrectAnswer("", "apple"),
   ]);
+  const be = await p.evaluate(() => [
+    displayEn("be good at"),
+    displayEn("(be) afraid of"),
+    displayEn("be good at / be poor at"),
+    displayEn("because of"),
+    displayEn("let it be"),
+    storeEn("be動詞 good at"),
+    isCorrectAnswer("be good at", "be good at"),
+    isCorrectAnswer("be動詞 good at", "be good at"),
+    isCorrectAnswer("is good at", "be good at"),
+    isCorrectAnswer("good at", "be good at"),
+    hintFor("be good at"),
+  ]);
+  check("be動詞の表記", JSON.stringify(be) === JSON.stringify([
+    "be動詞 good at", "(be動詞) afraid of", "be動詞 good at / be動詞 poor at", "because of", "let it be",
+    "be good at", true, true, true, false, "be動詞　 g _ _ _　 a _",
+  ]), JSON.stringify(be));
   check("採点のゆれ", JSON.stringify(grading) === JSON.stringify([true, true, false, true, true, true, true, false]), grading);
 
   // --- 単語の追加・編集・削除 ---
@@ -51,12 +68,26 @@ function check(name, ok, detail) {
   await p.fill("#edit-ja", "友だちになる");
   check("スペース入りは熟語になる", await p.evaluate(() => editType === "idiom"));
   await p.click('#edit-form button[type="submit"]');
+  await p.fill("#edit-en", "be動詞 fond of");
+  await p.fill("#edit-ja", "～が好きだ");
+  await p.click('#edit-form button[type="submit"]');
+  check("be動詞と入力しても be で保存", await p.evaluate(() => db.words.some((w) => w.en === "be fond of")));
+  await p.fill("#edit-en", "be good at");
+  await p.fill("#edit-ja", "x");
+  await p.click('#edit-form button[type="submit"]');
+  check("be動詞の熟語も重複を見つける", (await p.textContent("#edit-warn")).includes("「be動詞 good at」はもう登録"),
+    await p.textContent("#edit-warn"));
   await p.fill("#edit-en", "APPLE");
   await p.fill("#edit-ja", "x");
   await p.click('#edit-form button[type="submit"]');
   check("同じ英語は登録しない", (await p.textContent("#edit-warn")).includes("もう登録"));
   await p.click("#edit-cancel");
-  check("追加で11件", (await p.textContent("#words-count")) === "11 件");
+  check("追加で12件", (await p.textContent("#words-count")) === "12 件");
+  await p.fill("#words-search", "be動詞 fond");
+  check("単語帳は be動詞 と表示", (await p.textContent(".word-en")) === "be動詞 fond of");
+  await p.click(".word-main");
+  check("編集画面も be動詞 と表示", (await p.inputValue("#edit-en")) === "be動詞 fond of");
+  await p.click("#edit-delete");
   await p.fill("#words-search", "友だち");
   await p.click(".word-main");
   await p.fill("#edit-ja", "友達になる");
@@ -95,24 +126,40 @@ function check(name, ok, detail) {
   check("今日の分は新しい10語", (await p.textContent("#today-line")).includes("新しい単語 10語"));
   await p.click('[data-mode="cards"]');
   check("カードの英語を表示", (await p.textContent("#fc-en")).length > 0);
-  let missedOnce = false;
+  // 最後の1枚で「知らない」を押しつづけても、先へ進んでおわれること
+  let seenBe = false;
   for (let i = 0; i < 30 && (await p.isVisible("#view-study")); i++) {
     await p.click("#flashcard", { position: { x: 30, y: 60 } });
     const word = await en();
-    if (word === "apple" && !missedOnce) {
-      missedOnce = true;
+    if (word === "be good at") seenBe = (await p.textContent("#fc-en")) === "be動詞 good at";
+    const last = (await p.evaluate(() => session.queue.length)) === 1;
+    if (word === "apple" || last) {
+      const before = await p.textContent("#study-progress");
       await p.click("#ans-unknown");
+      if (await p.isVisible("#view-study")) {
+        check("知らないで次へ進む", (await p.textContent("#study-progress")) !== before, before);
+      }
     } else {
       await p.click("#ans-known");
     }
   }
-  check("カードめくり完了", (await p.textContent("#done-summary")).includes("知ってたのは 9語"), await p.textContent("#done-summary"));
+  check("カードに be動詞 と表示", seenBe);
+  check("カードめくり完了", (await p.textContent("#done-summary")).includes("10語のうち、知ってたのは 8語"), await p.textContent("#done-summary"));
   check("知らなかった単語の一覧", (await p.textContent("#done-missed-list")).includes("apple"));
   const apple = await p.evaluate(() => db.words.find((w) => w.en === "apple"));
-  check("知らなかった単語は苦手になる", apple.lapses === 1 && apple.level === 1, JSON.stringify(apple));
+  check("知らなかった単語は苦手になる", apple.lapses === 1 && apple.level === 0, JSON.stringify(apple));
   await p.click("#done-home");
   check("今日の学習 10", (await p.textContent("#stat-today")) === "10");
   check("連続 1日", (await p.textContent("#stat-streak")) === "1");
+  check("2回とも知らなかった単語は今日の分に残る", (await p.textContent("#today-line")).includes("復習 2語"),
+    await p.textContent("#today-line"));
+  // 残りを片づける
+  await p.click('[data-mode="cards"]');
+  for (let i = 0; i < 10 && (await p.isVisible("#view-study")); i++) {
+    await p.click("#flashcard", { position: { x: 30, y: 60 } });
+    await p.click("#ans-known");
+  }
+  await p.click("#done-home");
   check("目標クリア", (await p.textContent("#today-line")).includes("クリア"));
   dialogs.length = 0;
   await p.click('[data-mode="cards"]');
@@ -121,19 +168,21 @@ function check(name, ok, detail) {
   // --- 日 → 英（苦手だけ）---
   await p.click('[data-scope="weak"]');
   await p.click('[data-mode="ja2en"]');
-  check("苦手だけ = apple", (await en()) === "apple");
+  const weak = await p.evaluate(() => session.queue.map((id) => db.words.find((w) => w.id === id).en));
+  check("苦手だけ = 知らなかった2語", weak.length === 2 && weak.includes("apple"), weak.join(","));
+  const target = await en();
   await p.click("#je-hint-btn");
-  check("ヒント", (await p.textContent("#je-hint")) === "a _ _ _ _");
-  await p.fill("#je-input", "appel");
+  check("ヒント", (await p.textContent("#je-hint")) === (await p.evaluate((e) => hintFor(e), target)));
+  await p.fill("#je-input", target + "x");
   await p.press("#je-input", "Enter");
   check("つづりちがいは不正解", (await p.textContent("#je-feedback .fb-mark")).includes("ざんねん"));
   await p.click('#je-feedback [data-act="override"]');
   check("正解にする", (await p.textContent("#je-feedback .fb-mark")).includes("正解"));
   await p.click('#je-feedback [data-act="next"]');
-  check("予定より早い正解ではレベルを上げない", await p.evaluate(() => db.words.find((w) => w.en === "apple").level === 1));
+  check("予定より早い正解ではレベルを上げない", await p.evaluate((e) => db.words.find((w) => w.en === e).level === 1, target));
+  await p.click("#study-quit");
 
   // --- 英 → 日（全部）---
-  await p.click("#done-home");
   await p.click('[data-scope="all"]');
   await p.click('[data-mode="en2ja"]');
   check("英語はかくしてある", await p.isHidden("#ej-en"));

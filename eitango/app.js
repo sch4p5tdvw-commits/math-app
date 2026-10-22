@@ -139,10 +139,12 @@ function startSession(mode) {
   session = {
     mode,
     queue: ids,
-    total: ids.length,
-    done: 0,
+    words: ids.length, // はじめに出す単語の数
+    total: ids.length, // もう一度出す分を足した問題数
+    pos: 0, // 答えた問題数
     firstTry: 0,
     missed: new Set(), // 一度でもまちがえた・知らなかった単語
+    retried: new Set(), // もう一度出す分を足した単語
     pending: null, // 答え合わせのあと「次へ」を押すまでの結果
   };
   for (const m of Object.keys(MODES)) $("mode-" + m).hidden = m !== mode;
@@ -160,7 +162,8 @@ function nextItem() {
     finishSession();
     return;
   }
-  $("study-progress").textContent = `${session.done + 1} / ${session.total}`;
+  $("study-progress").textContent = `${session.pos + 1} / ${session.total}`;
+  $("study-retry").hidden = !session.missed.has(w.id);
   MODES[session.mode].show(w);
 }
 
@@ -169,12 +172,18 @@ function recordAnswer(correct) {
   const id = session.queue.shift();
   const w = db.words.find((x) => x.id === id);
   if (w) applyResult(w, correct, !correct && !session.missed.has(id));
+  session.pos++;
   if (correct) {
-    session.done++;
     if (!session.missed.has(id)) session.firstTry++;
   } else {
     session.missed.add(id);
-    session.queue.splice(Math.min(session.queue.length, 3), 0, id);
+    // もう一度出すのは1回だけ。最後の1枚で何度も同じカードが出て、先へ進めなくならないように。
+    // それでも覚えられなかった単語は今日の復習に残るので、「今日の分」でまた出る。
+    if (!session.retried.has(id)) {
+      session.retried.add(id);
+      session.queue.splice(Math.min(session.queue.length, 3), 0, id);
+      session.total++;
+    }
   }
   nextItem();
 }
@@ -183,11 +192,11 @@ function finishSession() {
   const s = session;
   session = null;
   const word = s.mode === "cards" ? "知ってた" : "1回で正解した";
-  $("done-summary").textContent = `${s.total}語のうち、${word}のは ${s.firstTry}語でした。`;
+  $("done-summary").textContent = `${s.words}語のうち、${word}のは ${s.firstTry}語でした。`;
   const missed = db.words.filter((w) => s.missed.has(w.id));
   $("done-missed").hidden = missed.length === 0;
   $("done-missed-list").innerHTML = missed
-    .map((w) => `<li><b lang="en">${escapeHtml(w.en)}</b>　${escapeHtml(w.ja)}</li>`)
+    .map((w) => `<li><b lang="en">${escapeHtml(displayEn(w.en))}</b>　${escapeHtml(w.ja)}</li>`)
     .join("");
   show("done");
 }
@@ -203,7 +212,7 @@ function renderFeedback(el, ok, w, opts = {}) {
     <p class="fb-mark ${ok ? "is-ok" : "is-ng"}">${ok ? "⭕ 正解！" : "❌ ざんねん"}</p>
     <div class="fb-word">
       <div>
-        <p class="fb-en" lang="en">${escapeHtml(w.en)}</p>
+        <p class="fb-en" lang="en">${escapeHtml(displayEn(w.en))}</p>
         <p class="fb-ja">${escapeHtml(w.ja)}</p>
       </div>
       <button type="button" class="btn-speak btn-speak-small" data-act="speak" aria-label="読み上げ">🔊</button>
@@ -231,7 +240,7 @@ function renderFeedback(el, ok, w, opts = {}) {
 // ---------------------------------------------------------------
 function showCard(w) {
   setTypeBadge($("fc-type"), w);
-  $("fc-en").textContent = w.en;
+  $("fc-en").textContent = displayEn(w.en);
   $("fc-ja").textContent = w.ja;
 
   // 熟語は使い方がわかるよう、表のときから例文を見せる
@@ -338,7 +347,7 @@ function answerEn2JaSpelling(given) {
   $("ej-form").hidden = true;
 
   // つづりの答え合わせ。ここで英語を見せてから、意味を選ぶ
-  $("ej-en").textContent = w.en;
+  $("ej-en").textContent = displayEn(w.en);
   $("ej-en").hidden = false;
   if (w.example) {
     $("ej-example").textContent = w.example;
@@ -409,7 +418,7 @@ function renderWords() {
   const q = $("words-search").value.trim().toLowerCase();
   const list = db.words
     .filter((w) => wordsFilter === "all" || (wordsFilter === "weak" ? isWeak(w) : w.type === wordsFilter))
-    .filter((w) => !q || w.en.toLowerCase().includes(q) || w.ja.includes(q))
+    .filter((w) => !q || normEn(w.en).includes(normEn(q)) || w.ja.includes(q))
     .sort((a, b) => b.createdAt - a.createdAt);
 
   $("words-count").textContent = `${list.length} 件`;
@@ -427,7 +436,7 @@ function renderWords() {
       </button>
       <button type="button" class="btn-speak btn-speak-small" aria-label="読み上げ">🔊</button>`;
     li.querySelector(".badge").textContent = TYPE_LABEL[w.type];
-    li.querySelector(".word-en").textContent = w.en;
+    li.querySelector(".word-en").textContent = displayEn(w.en);
     li.querySelector(".word-ja").textContent = w.ja;
     const st = wordStatus(w);
     li.querySelector(".word-status").textContent = st.text;
@@ -475,7 +484,7 @@ function openEdit(id) {
   editingId = id;
   const w = id ? db.words.find((x) => x.id === id) : null;
   $("edit-title").textContent = w ? "単語を編集" : "単語を追加";
-  $("edit-en").value = w ? w.en : "";
+  $("edit-en").value = w ? displayEn(w.en) : "";
   $("edit-ja").value = w ? w.ja : "";
   $("edit-example").value = w ? w.example : "";
   setEditType(w ? w.type : "word");
@@ -496,14 +505,14 @@ $("edit-en").addEventListener("input", () => {
 
 $("edit-form").addEventListener("submit", (e) => {
   e.preventDefault();
-  const en = $("edit-en").value.trim();
+  const en = storeEn($("edit-en").value);
   const ja = $("edit-ja").value.trim();
   const example = $("edit-example").value.trim();
   if (!en || !ja) return;
 
   const dup = findWordByEn(en, editingId);
   if (dup) {
-    $("edit-warn").textContent = `「${dup.en}」はもう登録されています（${dup.ja}）。`;
+    $("edit-warn").textContent = `「${displayEn(dup.en)}」はもう登録されています（${dup.ja}）。`;
     $("edit-warn").classList.remove("is-ok");
     $("edit-warn").hidden = false;
     return;
@@ -519,7 +528,7 @@ $("edit-form").addEventListener("submit", (e) => {
     saveDB();
     // 続けて登録しやすいよう、追加のあとは空のフォームのまま残る
     openEdit(null);
-    $("edit-warn").textContent = `「${en}」を追加しました。続けて入力できます。`;
+    $("edit-warn").textContent = `「${displayEn(en)}」を追加しました。続けて入力できます。`;
     $("edit-warn").hidden = false;
     $("edit-warn").classList.add("is-ok");
     return;
@@ -529,7 +538,7 @@ $("edit-form").addEventListener("submit", (e) => {
 $("edit-cancel").addEventListener("click", () => show("words"));
 $("edit-delete").addEventListener("click", () => {
   const w = db.words.find((x) => x.id === editingId);
-  if (!w || !confirm(`「${w.en}」を削除しますか？`)) return;
+  if (!w || !confirm(`「${displayEn(w.en)}」を削除しますか？`)) return;
   db.words = db.words.filter((x) => x.id !== editingId);
   saveDB();
   show("words");

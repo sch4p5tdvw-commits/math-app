@@ -46,3 +46,10 @@ borrow,借りる,単語,Can I borrow your pen?
 大文字小文字、全角英字、文末の `.` `?` `!`、`’` と `'`、空白の数は区別しません。
 英語の欄に `color / colour` と書くとどちらも正解、`(be) afraid of` と書くとかっこの中は
 あってもなくても正解になります。
+
+## be動詞の表記
+
+熟語の頭の be は be動詞のことなので、`be good at` と登録すると画面では
+「be動詞 good at」と表示します。読み上げは「be good at」のままです。
+入力や CSV に「be動詞 good at」と書いても `be good at` として保存します。
+日→英では `be good at`・`be動詞 good at`・`is good at`（am / are / was / were も）を正解にします。
