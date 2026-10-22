@@ -1,5 +1,4 @@
 const $ = (id) => document.getElementById(id);
-const TYPE_LABEL = { word: "単語", idiom: "熟語" };
 
 function shuffle(list) {
   const a = list.slice();
@@ -11,13 +10,13 @@ function shuffle(list) {
 }
 
 function speakWord(text) {
-  Speech.speak(text);
+  Speech.speak(text, { rate: db.settings.rate, voiceURI: db.settings.voiceURI });
 }
 
 // ---------------------------------------------------------------
 // 画面の切りかえ
 // ---------------------------------------------------------------
-const VIEWS = ["home", "study", "done", "words", "edit"];
+const VIEWS = ["home", "study", "done", "words", "edit", "settings"];
 // 学習中はタブを隠して、まちがって画面を移らないようにする
 const FOCUS_VIEWS = ["study", "edit"];
 
@@ -30,6 +29,7 @@ function show(view) {
   if (view !== "study") Speech.stop();
   if (view === "home") renderHome();
   if (view === "words") renderWords();
+  if (view === "settings") renderSettings();
   window.scrollTo(0, 0);
 }
 
@@ -89,7 +89,7 @@ function showCard() {
   $("fc-hint").hidden = false;
   $("answer-buttons").hidden = true;
   $("flashcard").classList.remove("is-flipped");
-  speakWord(w.en);
+  if (db.settings.autoSpeak) speakWord(w.en);
 }
 
 function flipCard() {
@@ -266,6 +266,73 @@ $("edit-delete").addEventListener("click", () => {
   db.words = db.words.filter((x) => x.id !== editingId);
   saveDB();
   show("words");
+});
+
+// ---------------------------------------------------------------
+// 設定・CSV
+// ---------------------------------------------------------------
+function renderSettings() {
+  const s = db.settings;
+  $("set-autospeak").checked = s.autoSpeak;
+  $("set-rate").value = s.rate;
+  $("set-rate-label").textContent = s.rate.toFixed(1);
+  renderVoiceList();
+}
+
+function renderVoiceList() {
+  const sel = $("set-voice");
+  sel.innerHTML = "";
+  const auto = document.createElement("option");
+  auto.value = "";
+  auto.textContent = "おまかせ（アメリカ英語）";
+  sel.appendChild(auto);
+  for (const v of Speech.voices) {
+    const o = document.createElement("option");
+    o.value = v.voiceURI;
+    o.textContent = `${v.name}（${v.lang}）`;
+    sel.appendChild(o);
+  }
+  sel.value = db.settings.voiceURI;
+  if (sel.value !== db.settings.voiceURI) sel.value = "";
+  $("speech-unsupported").hidden = Speech.supported;
+}
+
+if (Speech.supported) {
+  speechSynthesis.addEventListener("voiceschanged", () => {
+    if (!$("view-settings").hidden) renderVoiceList();
+  });
+}
+
+$("set-autospeak").addEventListener("change", (e) => {
+  db.settings.autoSpeak = e.target.checked;
+  saveDB();
+});
+$("set-rate").addEventListener("input", (e) => {
+  db.settings.rate = Number(e.target.value);
+  $("set-rate-label").textContent = db.settings.rate.toFixed(1);
+  saveDB();
+});
+$("set-voice").addEventListener("change", (e) => {
+  db.settings.voiceURI = e.target.value;
+  saveDB();
+  speakWord("Hello. Nice to meet you.");
+});
+$("set-voice-test").addEventListener("click", () => speakWord("Hello. Nice to meet you."));
+
+$("csv-export").addEventListener("click", () => {
+  downloadText(`eitango-${todayStr()}.csv`, exportCSVText(), "text/csv");
+});
+$("csv-import").addEventListener("click", () => $("csv-file").click());
+$("csv-file").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = ""; // 同じファイルをもう一度選んでも動くように
+  if (!file) return;
+  const text = decodeCSVBytes(await file.arrayBuffer());
+  const r = importCSVText(text);
+  let msg = `追加 ${r.added}件、上書き ${r.updated}件`;
+  if (r.skipped.length) msg += `\n英語か日本語訳が空の行はとばしました（${r.skipped.slice(0, 10).join(", ")}行目${r.skipped.length > 10 ? " ほか" : ""}）`;
+  $("csv-result").textContent = msg;
+  $("csv-result").hidden = false;
 });
 
 // ---------------------------------------------------------------

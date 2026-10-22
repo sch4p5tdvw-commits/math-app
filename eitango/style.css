@@ -255,6 +255,32 @@ textarea.input { resize: vertical; }
 .form-warn { margin: 0; color: var(--danger); font-weight: 700; }
 .form-warn.is-ok { color: var(--good); }
 
+/* ---------- 設定 ---------- */
+.panel-title { margin: 0 0 12px; font-size: 1.15rem; }
+.note { margin: 0 0 10px; color: var(--sub); line-height: 1.6; font-size: 0.95rem; }
+.btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
+.result-box {
+  margin: 12px 0 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: #eaf6ee;
+  color: #1f6b3e;
+  font-weight: 700;
+  white-space: pre-line;
+}
+#view-settings .panel { display: grid; gap: 12px; }
+#view-settings .panel-title, #view-settings .note { margin-bottom: 0; }
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;
+  font-weight: 700;
+}
+.switch { width: 28px; height: 28px; accent-color: var(--primary); flex: none; }
+.range { width: 100%; height: 40px; accent-color: var(--primary); }
+
 /* ---------- タブ ---------- */
 .tabbar {
   position: fixed;

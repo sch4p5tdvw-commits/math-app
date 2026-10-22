@@ -116,16 +116,54 @@
       </form>
     </section>
 
+    <!-- 設定 -->
+    <section id="view-settings" class="view" hidden>
+      <div class="panel">
+        <h2 class="panel-title">CSVで一括登録・書き出し</h2>
+        <p class="note">
+          列は <b>英語, 日本語訳, 種類, 例文</b> の順です。種類は「単語」か「熟語」（空欄ならスペース入りを熟語とみなします）。
+          例文はなくてもかまいません。1行目が見出しでもそのまま読み込めます。
+        </p>
+        <p class="note">同じ英語がすでにあるときは、訳・種類・例文を上書きします（例文の欄が空なら元の例文を残します。覚えた記録も残ります）。</p>
+        <div class="btn-row">
+          <button type="button" class="btn btn-primary btn-big" id="csv-import">📥 読み込む</button>
+          <button type="button" class="btn btn-big" id="csv-export">📤 書き出す</button>
+        </div>
+        <input type="file" id="csv-file" accept=".csv,text/csv,text/plain" hidden>
+        <p class="result-box" id="csv-result" hidden></p>
+      </div>
+
+      <div class="panel">
+        <h2 class="panel-title">音声</h2>
+        <p class="form-warn" id="speech-unsupported" hidden>このブラウザは読み上げに対応していません。</p>
+        <label class="switch-row">
+          <span>カードを出したら自動で読み上げる</span>
+          <input type="checkbox" id="set-autospeak" class="switch">
+        </label>
+        <label class="field">
+          <span class="field-label">速さ <b id="set-rate-label">0.9</b>（1.0 がふつう）</span>
+          <input type="range" id="set-rate" min="0.5" max="1.3" step="0.1" class="range">
+        </label>
+        <label class="field">
+          <span class="field-label">声</span>
+          <select id="set-voice" class="input"></select>
+        </label>
+        <button type="button" class="btn btn-big" id="set-voice-test">🔊 試しに聞く</button>
+      </div>
+    </section>
+
   </main>
 
   <nav class="tabbar" id="tabbar">
     <button type="button" class="tab is-on" data-view="home"><span class="tab-icon">🏠</span>ホーム</button>
     <button type="button" class="tab" data-view="words"><span class="tab-icon">📒</span>単語帳</button>
+    <button type="button" class="tab" data-view="settings"><span class="tab-icon">⚙️</span>設定</button>
   </nav>
 </div>
 
 <script src="store.js"></script>
 <script src="speech.js"></script>
+<script src="csv.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
