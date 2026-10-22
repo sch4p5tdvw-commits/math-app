@@ -137,9 +137,35 @@ textarea.input { resize: vertical; }
 
 /* ---------- ホーム ---------- */
 .home-line { margin: 0 0 8px; color: var(--sub); }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
+.stat {
+  background: #f3f6fb;
+  border-radius: 14px;
+  padding: 12px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.stat-num { font-size: 1.9rem; font-weight: 800; color: var(--primary); line-height: 1.1; }
+.stat-label { font-size: 0.8rem; color: var(--sub); font-weight: 700; }
+.goal { display: grid; gap: 8px; }
+.goal-bar { height: 14px; background: #e7ecf5; border-radius: 999px; overflow: hidden; }
+.goal-fill { height: 100%; width: 0; background: var(--primary); border-radius: 999px; transition: width 0.4s; }
+.goal-fill.is-done { background: var(--good); }
+.streak-note { margin: 0; color: var(--bad); font-weight: 700; font-size: 0.95rem; }
+.field-label-top { margin: 0 0 8px; }
+.week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 14px; }
+.week-day { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.week-n { font-size: 0.75rem; color: var(--sub); min-height: 1em; }
+.week-bar { width: 100%; max-width: 28px; height: 56px; background: #eef2f8; border-radius: 6px; display: flex; align-items: flex-end; overflow: hidden; }
+.week-fill { width: 100%; background: #9db8e2; }
+.week-day.is-today .week-fill { background: var(--primary); }
+.week-label { font-size: 0.75rem; color: var(--sub); font-weight: 700; }
+.week-day.is-today .week-label { color: var(--primary); }
 .today-line { margin: 0; font-size: 1.1rem; font-weight: 700; }
 .today-line b { font-size: 1.4rem; color: var(--primary); }
-.seg-scope { margin: 8px 0 0; }
+.seg-scope { margin: 0; }
 .scope-note { margin: 10px 2px 14px; font-size: 0.9rem; }
 .home-line b { color: var(--ink); font-size: 1.3rem; }
 
@@ -362,6 +388,11 @@ textarea.input { resize: vertical; }
 }
 #view-settings .panel { display: grid; gap: 12px; }
 #view-settings .panel-title, #view-settings .note { margin-bottom: 0; }
+.stepper-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-weight: 700; flex-wrap: wrap; }
+.stepper { display: flex; align-items: center; gap: 10px; }
+.stepper-btn { width: 56px; min-height: 56px; font-size: 1.6rem; padding: 0; }
+.stepper-value { min-width: 64px; text-align: center; }
+.stepper-value b { font-size: 1.6rem; }
 .switch-row {
   display: flex;
   align-items: center;
@@ -413,6 +444,18 @@ textarea.input { resize: vertical; }
     align-items: stretch;
   }
   .flashcard { min-height: 60vh; }
+  #view-home:not([hidden]) {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas: "stats modes" "week modes";
+    grid-template-rows: auto 1fr;
+    gap: 14px;
+    align-items: start;
+  }
+  #view-home .panel { margin: 0; }
+  .home-stats { grid-area: stats; }
+  .home-modes { grid-area: modes; }
+  .home-week { grid-area: week; }
   /* 書く問題は入力とボタンを右側にまとめる */
   #mode-ja2en, #mode-en2ja { grid-template-columns: 1fr 380px; align-items: start; }
   .quiz-card { min-height: 50vh; justify-content: center; }

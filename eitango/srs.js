@@ -78,3 +78,15 @@ function weakQueue() {
     (a, b) => (a.level || 0) - (b.level || 0) || (b.lapses || 0) - (a.lapses || 0)
   );
 }
+
+// 続けて学習した日数。今日まだ学習していなければ、昨日までの日数を数える。
+function streakDays() {
+  let day = todayStr();
+  if (!(db.log[day] && db.log[day].count > 0)) day = addDays(day, -1);
+  let n = 0;
+  while (db.log[day] && db.log[day].count > 0) {
+    n++;
+    day = addDays(day, -1);
+  }
+  return n;
+}

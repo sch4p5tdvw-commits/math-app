@@ -19,13 +19,21 @@
 
     <!-- ホーム -->
     <section id="view-home" class="view">
-      <div class="panel">
-        <p class="home-line">登録している単語・熟語：<b id="home-total">0</b></p>
-        <p class="today-line" id="today-line"></p>
+      <div class="panel home-stats">
+        <div class="stats">
+          <div class="stat"><span class="stat-num" id="stat-today">0</span><span class="stat-label">今日の学習</span></div>
+          <div class="stat"><span class="stat-num" id="stat-streak">0</span><span class="stat-label">連続日数</span></div>
+          <div class="stat"><span class="stat-num" id="stat-mastered">0</span><span class="stat-label">覚えた</span></div>
+        </div>
+        <div class="goal">
+          <div class="goal-bar"><div class="goal-fill" id="goal-fill"></div></div>
+          <p class="today-line" id="today-line"></p>
+          <p class="streak-note" id="streak-note" hidden></p>
+        </div>
       </div>
 
-      <div class="panel">
-        <p class="field-label">出題する単語</p>
+      <div class="panel home-modes">
+        <p class="field-label field-label-top">出題する単語</p>
         <div class="seg seg-scope" id="scope">
           <button type="button" class="seg-btn is-on" data-scope="today">今日の分</button>
           <button type="button" class="seg-btn" data-scope="weak">苦手だけ<span id="scope-weak-n"></span></button>
@@ -46,6 +54,12 @@
             <span class="mode-desc">聞いて書いて、意味を4択で選ぶ</span>
           </button>
         </div>
+      </div>
+
+      <div class="panel home-week">
+        <p class="field-label field-label-top">この1週間</p>
+        <div class="week" id="week" aria-label="この1週間の学習数"></div>
+        <p class="home-line">登録している単語・熟語：<b id="home-total">0</b>（覚えた <span id="home-mastered-pct">0</span>%）</p>
       </div>
     </section>
 
@@ -215,6 +229,19 @@
       </div>
 
       <div class="panel">
+        <h2 class="panel-title">1日の目標</h2>
+        <div class="stepper-row">
+          <span>新しく覚える単語</span>
+          <div class="stepper">
+            <button type="button" class="btn stepper-btn" id="goal-minus" aria-label="減らす">−</button>
+            <span class="stepper-value"><b id="goal-new">10</b>語</span>
+            <button type="button" class="btn stepper-btn" id="goal-plus" aria-label="増やす">＋</button>
+          </div>
+        </div>
+        <p class="note">これに加えて、その日に復習する単語（まちがえた単語や、前に覚えた単語）が出ます。</p>
+      </div>
+
+      <div class="panel">
         <h2 class="panel-title">音声</h2>
         <p class="form-warn" id="speech-unsupported" hidden>このブラウザは読み上げに対応していません。</p>
         <label class="switch-row">
@@ -230,6 +257,19 @@
           <select id="set-voice" class="input"></select>
         </label>
         <button type="button" class="btn btn-big" id="set-voice-test">🔊 試しに聞く</button>
+      </div>
+      <div class="panel">
+        <h2 class="panel-title">バックアップ</h2>
+        <p class="note">
+          記録はこの端末のブラウザの中だけにあります。CSVには学習の記録が入らないので、
+          機種変更やブラウザのデータ削除にそなえて、ときどき記録ごと保存しておくと安心です。
+        </p>
+        <div class="btn-row">
+          <button type="button" class="btn btn-big" id="backup-save">💾 保存</button>
+          <button type="button" class="btn btn-big" id="backup-load">♻️ 復元</button>
+        </div>
+        <input type="file" id="backup-file" accept=".json,application/json" hidden>
+        <button type="button" class="btn btn-danger" id="reset-progress">学習の記録を消す（単語は残す）</button>
       </div>
     </section>
 

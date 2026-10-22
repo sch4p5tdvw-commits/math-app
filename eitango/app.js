@@ -42,16 +42,59 @@ const SCOPE_NOTE = {
 };
 
 function renderHome() {
+  const today = todayStr();
+  const log = db.log[today] || { count: 0 };
+  const mastered = db.words.filter(isMastered).length;
+  const streak = streakDays();
+  $("stat-today").textContent = log.count;
+  $("stat-streak").textContent = streak;
+  $("stat-mastered").textContent = mastered;
   $("home-total").textContent = db.words.length;
+  $("home-mastered-pct").textContent = db.words.length ? Math.round((mastered / db.words.length) * 100) : 0;
+
+  // 今日の目標は「今日学習した数 ＋ 今日まだ残っている数」。全部やりきると 100%
   const { review, fresh } = todayQueue();
+  const left = review.length + fresh.length;
+  const pct = log.count + left === 0 ? 0 : Math.round((log.count / (log.count + left)) * 100);
+  $("goal-fill").style.width = (left === 0 && log.count > 0 ? 100 : pct) + "%";
+  $("goal-fill").classList.toggle("is-done", left === 0 && log.count > 0);
   $("today-line").innerHTML =
-    review.length + fresh.length === 0
-      ? "今日の分はおわりました 🎉"
-      : `今日の分：復習 <b>${review.length}</b>語 ＋ 新しい単語 <b>${fresh.length}</b>語`;
+    left === 0
+      ? log.count > 0
+        ? "今日の目標クリア！ 🎉"
+        : "今日の分はありません。単語を追加しよう"
+      : `今日の残り：復習 <b>${review.length}</b>語 ＋ 新しい単語 <b>${fresh.length}</b>語`;
+  const note = $("streak-note");
+  note.hidden = !(streak > 0 && log.count === 0);
+  note.textContent = `今日も学習すると ${streak + 1}日連続！`;
+  renderWeek();
   const weakN = db.words.filter(isWeak).length;
   $("scope-weak-n").textContent = weakN ? `（${weakN}）` : "";
   for (const b of $("scope").querySelectorAll(".seg-btn")) b.classList.toggle("is-on", b.dataset.scope === scope);
   $("scope-note").textContent = SCOPE_NOTE[scope];
+}
+
+// この1週間の学習数を棒で見せる
+function renderWeek() {
+  const today = todayStr();
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const day = addDays(today, -i);
+    days.push({ day, count: (db.log[day] && db.log[day].count) || 0 });
+  }
+  const max = Math.max(10, ...days.map((d) => d.count));
+  const wk = "日月火水木金土";
+  $("week").innerHTML = days
+    .map((d) => {
+      const [y, m, dd] = d.day.split("-").map(Number);
+      const label = d.day === today ? "今日" : wk[new Date(y, m - 1, dd).getDay()];
+      const h = Math.round((d.count / max) * 100);
+      return `<div class="week-day${d.day === today ? " is-today" : ""}">
+        <span class="week-n">${d.count || ""}</span>
+        <div class="week-bar"><div class="week-fill" style="height:${h}%"></div></div>
+        <span class="week-label">${label}</span></div>`;
+    })
+    .join("");
 }
 
 for (const b of $("scope").querySelectorAll(".seg-btn")) {
@@ -497,6 +540,7 @@ $("edit-delete").addEventListener("click", () => {
 // ---------------------------------------------------------------
 function renderSettings() {
   const s = db.settings;
+  $("goal-new").textContent = s.newPerDay;
   $("set-autospeak").checked = s.autoSpeak;
   $("set-rate").value = s.rate;
   $("set-rate-label").textContent = s.rate.toFixed(1);
@@ -526,6 +570,47 @@ if (Speech.supported) {
     if (!$("view-settings").hidden) renderVoiceList();
   });
 }
+
+function changeGoal(diff) {
+  db.settings.newPerDay = Math.min(50, Math.max(0, db.settings.newPerDay + diff));
+  $("goal-new").textContent = db.settings.newPerDay;
+  saveDB();
+}
+$("goal-minus").addEventListener("click", () => changeGoal(-1));
+$("goal-plus").addEventListener("click", () => changeGoal(1));
+
+$("backup-save").addEventListener("click", () => {
+  downloadText(`eitango-backup-${todayStr()}.json`, JSON.stringify(db), "application/json");
+});
+$("backup-load").addEventListener("click", () => $("backup-file").click());
+$("backup-file").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  let data = null;
+  try {
+    data = JSON.parse(await file.text());
+  } catch (err) {
+    data = null;
+  }
+  if (!data || !Array.isArray(data.words)) {
+    alert("このファイルは英単語ノートのバックアップではないようです。");
+    return;
+  }
+  if (!confirm(`バックアップ（${data.words.length}語）で、今の単語帳と記録を置きかえますか？`)) return;
+  localStorage.setItem(STORE_KEY, JSON.stringify(data));
+  db = loadDB();
+  saveDB();
+  alert("復元しました。");
+  renderSettings();
+});
+$("reset-progress").addEventListener("click", () => {
+  if (!confirm("覚えた記録・連続日数などをすべて消して、全部の単語を未学習にもどします。よろしいですか？")) return;
+  for (const w of db.words) Object.assign(w, { level: 0, due: null, reps: 0, lapses: 0, lastDay: null });
+  db.log = {};
+  saveDB();
+  alert("学習の記録を消しました。");
+});
 
 $("set-autospeak").addEventListener("change", (e) => {
   db.settings.autoSpeak = e.target.checked;
