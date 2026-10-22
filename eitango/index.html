@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>英単語ノート</title>
+<meta name="description" content="自分で作る英単語・英熟語帳。カードめくりと音声で毎日少しずつ覚える">
+<meta name="theme-color" content="#2b5fab">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="英単ノート">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app">
+  <header class="topbar">
+    <h1 class="topbar-title">英単語ノート</h1>
+  </header>
+
+  <main class="main">
+
+    <!-- ホーム -->
+    <section id="view-home" class="view">
+      <div class="panel home-stats">
+        <div class="stats">
+          <div class="stat"><span class="stat-num" id="stat-today">0</span><span class="stat-label">今日の学習</span></div>
+          <div class="stat"><span class="stat-num" id="stat-streak">0</span><span class="stat-label">連続日数</span></div>
+          <div class="stat"><span class="stat-num" id="stat-mastered">0</span><span class="stat-label">覚えた</span></div>
+        </div>
+        <div class="goal">
+          <div class="goal-bar"><div class="goal-fill" id="goal-fill"></div></div>
+          <p class="today-line" id="today-line"></p>
+          <p class="streak-note" id="streak-note" hidden></p>
+        </div>
+      </div>
+
+      <div class="panel home-modes">
+        <p class="field-label field-label-top">出題する単語</p>
+        <div class="seg seg-scope" id="scope">
+          <button type="button" class="seg-btn is-on" data-scope="today">今日の分</button>
+          <button type="button" class="seg-btn" data-scope="weak">苦手だけ<span id="scope-weak-n"></span></button>
+          <button type="button" class="seg-btn" data-scope="all">全部</button>
+        </div>
+        <p class="note scope-note" id="scope-note"></p>
+        <div class="mode-buttons">
+          <button type="button" class="btn btn-primary btn-mode" data-mode="cards">
+            <span class="mode-icon">🃏</span><span class="mode-name">カードめくり</span>
+            <span class="mode-desc">英語を聞いて、訳を思い出す</span>
+          </button>
+          <button type="button" class="btn btn-mode btn-mode-ja2en" data-mode="ja2en">
+            <span class="mode-icon">✏️</span><span class="mode-name">日 → 英</span>
+            <span class="mode-desc">日本語を見て、英語を書く</span>
+          </button>
+          <button type="button" class="btn btn-mode btn-mode-en2ja" data-mode="en2ja">
+            <span class="mode-icon">🎧</span><span class="mode-name">英 → 日</span>
+            <span class="mode-desc">聞いて書いて、意味を4択で選ぶ</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="panel home-week">
+        <p class="field-label field-label-top">この1週間</p>
+        <div class="week" id="week" aria-label="この1週間の学習数"></div>
+        <p class="home-line">登録している単語・熟語：<b id="home-total">0</b>（覚えた <span id="home-mastered-pct">0</span>%）</p>
+      </div>
+    </section>
+
+    <!-- 学習 -->
+    <section id="view-study" class="view" hidden>
+      <div class="study-head">
+        <button type="button" class="btn btn-ghost" id="study-quit">やめる</button>
+        <span class="study-progress" id="study-progress">1 / 10</span>
+      </div>
+
+      <!-- カードめくり -->
+      <div class="study-body" id="mode-cards" hidden>
+        <div class="flashcard" id="flashcard" role="button" tabindex="0" aria-label="タップで訳を見る">
+          <span class="badge" id="fc-type">単語</span>
+          <p class="fc-en" id="fc-en" lang="en"></p>
+          <button type="button" class="btn-speak" id="fc-speak" aria-label="もう一度聞く">🔊</button>
+          <p class="fc-example fc-example-front" id="fc-example-front" lang="en" hidden></p>
+          <div class="fc-back" id="fc-back" hidden>
+            <p class="fc-ja" id="fc-ja"></p>
+            <p class="fc-example" id="fc-example-back" lang="en" hidden></p>
+          </div>
+          <p class="fc-hint" id="fc-hint">タップして訳を見る</p>
+        </div>
+
+        <div class="answer-buttons" id="answer-buttons" hidden>
+          <button type="button" class="btn btn-bad btn-big" id="ans-unknown">知らない</button>
+          <button type="button" class="btn btn-good btn-big" id="ans-known">知ってる</button>
+        </div>
+      </div>
+
+      <!-- 日 → 英 -->
+      <div class="study-body" id="mode-ja2en" hidden>
+        <div class="quiz-card">
+          <span class="badge" id="je-type">単語</span>
+          <p class="quiz-ask">英語で書くと？</p>
+          <p class="quiz-ja" id="je-ja"></p>
+          <p class="quiz-hint" id="je-hint" lang="en" hidden></p>
+        </div>
+        <div class="quiz-side">
+          <form class="quiz-form" id="je-form" autocomplete="off">
+            <input type="text" class="input input-answer" id="je-input" lang="en"
+                   autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done"
+                   placeholder="ここに英語を入力">
+            <div class="btn-row">
+              <button type="button" class="btn btn-big" id="je-hint-btn">ヒント</button>
+              <button type="submit" class="btn btn-primary btn-big">答え合わせ</button>
+            </div>
+            <button type="button" class="btn btn-ghost btn-big" id="je-giveup">わからない</button>
+          </form>
+          <div class="feedback" id="je-feedback" hidden></div>
+        </div>
+      </div>
+
+      <!-- 英 → 日 -->
+      <div class="study-body" id="mode-en2ja" hidden>
+        <div class="quiz-card">
+          <span class="badge" id="ej-type">単語</span>
+          <p class="quiz-ask" id="ej-ask">聞こえた英語を書こう</p>
+          <div class="listen-buttons" id="ej-listen">
+            <button type="button" class="btn-speak btn-speak-big" id="ej-play" aria-label="もう一度聞く">🔊</button>
+            <button type="button" class="btn btn-ghost" id="ej-slow">🐢 ゆっくり</button>
+          </div>
+          <p class="quiz-en" id="ej-en" lang="en" hidden></p>
+          <p class="fc-example" id="ej-example" lang="en" hidden></p>
+        </div>
+        <div class="quiz-side">
+          <form class="quiz-form" id="ej-form" autocomplete="off">
+            <input type="text" class="input input-answer" id="ej-input" lang="en"
+                   autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done"
+                   placeholder="聞こえた英語を入力">
+            <div class="btn-row">
+              <button type="button" class="btn btn-ghost btn-big" id="ej-giveup">わからない</button>
+              <button type="submit" class="btn btn-primary btn-big">答え合わせ</button>
+            </div>
+          </form>
+          <p class="spell-result" id="ej-spell" hidden></p>
+          <div class="choices" id="ej-choices" hidden></div>
+          <div class="feedback" id="ej-feedback" hidden></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 学習のおわり -->
+    <section id="view-done" class="view" hidden>
+      <div class="panel center">
+        <p class="done-title">おつかれさま！</p>
+        <p class="done-line" id="done-summary"></p>
+        <div class="done-missed" id="done-missed" hidden>
+          <p class="done-missed-title">まちがえた・知らなかった単語</p>
+          <ul class="done-missed-list" id="done-missed-list"></ul>
+        </div>
+        <button type="button" class="btn btn-primary btn-big" id="done-home">ホームへ</button>
+      </div>
+    </section>
+
+    <!-- 単語帳 -->
+    <section id="view-words" class="view" hidden>
+      <div class="words-tools">
+        <input type="search" id="words-search" class="input" placeholder="さがす（英語・日本語）" autocomplete="off">
+        <div class="seg" id="words-filter">
+          <button type="button" class="seg-btn is-on" data-filter="all">すべて</button>
+          <button type="button" class="seg-btn" data-filter="word">単語</button>
+          <button type="button" class="seg-btn" data-filter="idiom">熟語</button>
+          <button type="button" class="seg-btn" data-filter="weak">苦手</button>
+        </div>
+        <button type="button" class="btn btn-primary btn-big" id="words-add">＋ 追加する</button>
+      </div>
+      <p class="words-count" id="words-count"></p>
+      <ul class="word-list" id="word-list"></ul>
+    </section>
+
+    <!-- 単語の追加・編集 -->
+    <section id="view-edit" class="view" hidden>
+      <form class="panel form" id="edit-form" autocomplete="off">
+        <h2 class="form-title" id="edit-title">単語を追加</h2>
+
+        <label class="field">
+          <span class="field-label">英語</span>
+          <input type="text" class="input" id="edit-en" lang="en" required
+                 autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="例）look for">
+        </label>
+
+        <label class="field">
+          <span class="field-label">日本語訳</span>
+          <input type="text" class="input" id="edit-ja" required placeholder="例）～を探す">
+        </label>
+
+        <div class="field">
+          <span class="field-label">種類</span>
+          <div class="seg" id="edit-type">
+            <button type="button" class="seg-btn is-on" data-type="word">単語</button>
+            <button type="button" class="seg-btn" data-type="idiom">熟語</button>
+          </div>
+        </div>
+
+        <label class="field">
+          <span class="field-label">例文（なくてもOK）</span>
+          <textarea class="input" id="edit-example" rows="2" lang="en"
+                    autocapitalize="sentences" spellcheck="false" placeholder="例）I am looking for my key."></textarea>
+        </label>
+
+        <p class="form-warn" id="edit-warn" hidden></p>
+
+        <div class="form-buttons">
+          <button type="button" class="btn btn-ghost btn-big" id="edit-cancel">もどる</button>
+          <button type="submit" class="btn btn-primary btn-big">保存</button>
+        </div>
+        <button type="button" class="btn btn-danger" id="edit-delete" hidden>この単語を削除</button>
+      </form>
+    </section>
+
+    <!-- 設定 -->
+    <section id="view-settings" class="view" hidden>
+      <div class="panel">
+        <h2 class="panel-title">CSVで一括登録・書き出し</h2>
+        <p class="note">
+          列は <b>英語, 日本語訳, 種類, 例文</b> の順です。種類は「単語」か「熟語」（空欄ならスペース入りを熟語とみなします）。
+          例文はなくてもかまいません。1行目が見出しでもそのまま読み込めます。
+        </p>
+        <p class="note">同じ英語がすでにあるときは、訳・種類・例文を上書きします（例文の欄が空なら元の例文を残します。覚えた記録も残ります）。</p>
+        <div class="btn-row">
+          <button type="button" class="btn btn-primary btn-big" id="csv-import">📥 読み込む</button>
+          <button type="button" class="btn btn-big" id="csv-export">📤 書き出す</button>
+        </div>
+        <input type="file" id="csv-file" accept=".csv,text/csv,text/plain" hidden>
+        <p class="result-box" id="csv-result" hidden></p>
+      </div>
+
+      <div class="panel">
+        <h2 class="panel-title">1日の目標</h2>
+        <div class="stepper-row">
+          <span>新しく覚える単語</span>
+          <div class="stepper">
+            <button type="button" class="btn stepper-btn" id="goal-minus" aria-label="減らす">−</button>
+            <span class="stepper-value"><b id="goal-new">10</b>語</span>
+            <button type="button" class="btn stepper-btn" id="goal-plus" aria-label="増やす">＋</button>
+          </div>
+        </div>
+        <p class="note">これに加えて、その日に復習する単語（まちがえた単語や、前に覚えた単語）が出ます。</p>
+      </div>
+
+      <div class="panel">
+        <h2 class="panel-title">音声</h2>
+        <p class="form-warn" id="speech-unsupported" hidden>このブラウザは読み上げに対応していません。</p>
+        <label class="switch-row">
+          <span>カードを出したら自動で読み上げる</span>
+          <input type="checkbox" id="set-autospeak" class="switch">
+        </label>
+        <label class="field">
+          <span class="field-label">速さ <b id="set-rate-label">0.9</b>（1.0 がふつう）</span>
+          <input type="range" id="set-rate" min="0.5" max="1.3" step="0.1" class="range">
+        </label>
+        <label class="field">
+          <span class="field-label">声</span>
+          <select id="set-voice" class="input"></select>
+        </label>
+        <button type="button" class="btn btn-big" id="set-voice-test">🔊 試しに聞く</button>
+      </div>
+      <div class="panel">
+        <h2 class="panel-title">バックアップ</h2>
+        <p class="note">
+          記録はこの端末のブラウザの中だけにあります。CSVには学習の記録が入らないので、
+          機種変更やブラウザのデータ削除にそなえて、ときどき記録ごと保存しておくと安心です。
+        </p>
+        <div class="btn-row">
+          <button type="button" class="btn btn-big" id="backup-save">💾 保存</button>
+          <button type="button" class="btn btn-big" id="backup-load">♻️ 復元</button>
+        </div>
+        <input type="file" id="backup-file" accept=".json,application/json" hidden>
+        <button type="button" class="btn btn-danger" id="reset-progress">学習の記録を消す（単語は残す）</button>
+      </div>
+    </section>
+
+  </main>
+
+  <nav class="tabbar" id="tabbar">
+    <button type="button" class="tab is-on" data-view="home"><span class="tab-icon">🏠</span>ホーム</button>
+    <button type="button" class="tab" data-view="words"><span class="tab-icon">📒</span>単語帳</button>
+    <button type="button" class="tab" data-view="settings"><span class="tab-icon">⚙️</span>設定</button>
+  </nav>
+</div>
+
+<script src="store.js"></script>
+<script src="speech.js"></script>
+<script src="csv.js"></script>
+<script src="quiz.js"></script>
+<script src="srs.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
