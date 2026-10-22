@@ -6,6 +6,7 @@ const DEFAULT_SETTINGS = {
   autoSpeak: true, // カードを出したときに読み上げる
   rate: 0.9, // 読み上げの速さ
   voiceURI: "", // 空なら端末のアメリカ英語の声を選ぶ
+  newPerDay: 10, // 1日に新しく覚える数
 };
 
 // 動作確認用の自作サンプル。市販の単語帳からは取っていない。
@@ -42,6 +43,12 @@ function makeWord(en, ja, type, example) {
     type: type === "idiom" ? "idiom" : "word",
     example: (example || "").trim(),
     createdAt: Date.now(),
+    // 学習の進み具合（srs.js）。due が null のあいだは未学習
+    level: 0,
+    due: null,
+    reps: 0,
+    lapses: 0,
+    lastDay: null,
   };
 }
 
@@ -49,6 +56,7 @@ function freshDB() {
   return {
     version: 1,
     settings: { ...DEFAULT_SETTINGS },
+    log: {}, // 日付ごとの学習数 { "2026-10-22": { count, newCount, correct, wrong } }
     words: SAMPLE_WORDS.map(([en, ja, type, ex]) => makeWord(en, ja, type, ex)),
   };
 }
@@ -63,6 +71,7 @@ function loadDB() {
   if (!data || !Array.isArray(data.words)) data = freshDB();
   // あとから増えた設定項目は初期値でうめる
   data.settings = { ...DEFAULT_SETTINGS, ...(data.settings || {}) };
+  if (!data.log || typeof data.log !== "object") data.log = {};
   return data;
 }
 

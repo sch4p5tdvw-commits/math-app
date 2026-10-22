@@ -21,6 +21,17 @@
     <section id="view-home" class="view">
       <div class="panel">
         <p class="home-line">登録している単語・熟語：<b id="home-total">0</b></p>
+        <p class="today-line" id="today-line"></p>
+      </div>
+
+      <div class="panel">
+        <p class="field-label">出題する単語</p>
+        <div class="seg seg-scope" id="scope">
+          <button type="button" class="seg-btn is-on" data-scope="today">今日の分</button>
+          <button type="button" class="seg-btn" data-scope="weak">苦手だけ<span id="scope-weak-n"></span></button>
+          <button type="button" class="seg-btn" data-scope="all">全部</button>
+        </div>
+        <p class="note scope-note" id="scope-note"></p>
         <div class="mode-buttons">
           <button type="button" class="btn btn-primary btn-mode" data-mode="cards">
             <span class="mode-icon">🃏</span><span class="mode-name">カードめくり</span>
@@ -138,6 +149,7 @@
           <button type="button" class="seg-btn is-on" data-filter="all">すべて</button>
           <button type="button" class="seg-btn" data-filter="word">単語</button>
           <button type="button" class="seg-btn" data-filter="idiom">熟語</button>
+          <button type="button" class="seg-btn" data-filter="weak">苦手</button>
         </div>
         <button type="button" class="btn btn-primary btn-big" id="words-add">＋ 追加する</button>
       </div>
@@ -234,6 +246,7 @@
 <script src="speech.js"></script>
 <script src="csv.js"></script>
 <script src="quiz.js"></script>
+<script src="srs.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

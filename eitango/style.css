@@ -136,7 +136,11 @@ textarea.input { resize: vertical; }
 .seg-btn.is-on { background: #fff; color: var(--primary); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12); }
 
 /* ---------- ホーム ---------- */
-.home-line { margin: 0 0 16px; color: var(--sub); }
+.home-line { margin: 0 0 8px; color: var(--sub); }
+.today-line { margin: 0; font-size: 1.1rem; font-weight: 700; }
+.today-line b { font-size: 1.4rem; color: var(--primary); }
+.seg-scope { margin: 8px 0 0; }
+.scope-note { margin: 10px 2px 14px; font-size: 0.9rem; }
 .home-line b { color: var(--ink); font-size: 1.3rem; }
 
 .mode-buttons { display: grid; gap: 12px; }
@@ -320,13 +324,18 @@ textarea.input { resize: vertical; }
   min-height: 56px;
   display: grid;
   grid-template-columns: auto 1fr;
-  grid-template-areas: "badge en" "badge ja";
+  grid-template-areas: "badge en" "badge ja" "badge st";
   column-gap: 10px;
   align-items: center;
 }
 .word-main .badge { grid-area: badge; }
 .word-en { grid-area: en; font-weight: 700; font-size: 1.1rem; overflow-wrap: anywhere; }
 .word-ja { grid-area: ja; color: var(--sub); font-size: 0.95rem; overflow-wrap: anywhere; }
+.word-status { grid-area: st; font-size: 0.8rem; font-weight: 700; margin-top: 2px; letter-spacing: 0.05em; }
+.st-new { color: #8a94a6; }
+.st-learning { color: var(--primary); }
+.st-weak { color: var(--bad); }
+.st-done { color: var(--good); }
 .word-empty { color: var(--sub); text-align: center; padding: 24px; }
 
 /* ---------- フォーム ---------- */

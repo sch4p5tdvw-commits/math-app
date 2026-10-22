@@ -33,9 +33,48 @@ for (const t of document.querySelectorAll(".tab")) {
   t.addEventListener("click", () => show(t.dataset.view));
 }
 
+let scope = "today";
+
+const SCOPE_NOTE = {
+  today: "まちがえた・知らなかった単語を先に、復習 → 新しい単語の順に出します。",
+  weak: "まちがえたことがあって、まだ覚えきっていない単語だけを出します。",
+  all: "登録した単語をぜんぶ、ばらばらの順で出します。",
+};
+
 function renderHome() {
   $("home-total").textContent = db.words.length;
+  const { review, fresh } = todayQueue();
+  $("today-line").innerHTML =
+    review.length + fresh.length === 0
+      ? "今日の分はおわりました 🎉"
+      : `今日の分：復習 <b>${review.length}</b>語 ＋ 新しい単語 <b>${fresh.length}</b>語`;
+  const weakN = db.words.filter(isWeak).length;
+  $("scope-weak-n").textContent = weakN ? `（${weakN}）` : "";
+  for (const b of $("scope").querySelectorAll(".seg-btn")) b.classList.toggle("is-on", b.dataset.scope === scope);
+  $("scope-note").textContent = SCOPE_NOTE[scope];
 }
+
+for (const b of $("scope").querySelectorAll(".seg-btn")) {
+  b.addEventListener("click", () => {
+    scope = b.dataset.scope;
+    renderHome();
+  });
+}
+
+function buildQueue() {
+  if (scope === "today") {
+    const { review, fresh } = todayQueue();
+    return [...review, ...fresh];
+  }
+  if (scope === "weak") return weakQueue();
+  return shuffle(db.words);
+}
+
+const EMPTY_SCOPE_MSG = {
+  today: "今日の分はもうおわっています。「苦手だけ」か「全部」で練習できます。",
+  weak: "苦手な単語はありません。",
+  all: "単語帳に単語がありません。先に「単語帳」から追加してください。",
+};
 
 // ---------------------------------------------------------------
 // 学習の流れ（3つの出し方で共通）
@@ -49,11 +88,11 @@ const MODES = {
 let session = null;
 
 function startSession(mode) {
-  if (db.words.length === 0) {
-    alert("単語帳に単語がありません。先に「単語帳」から追加してください。");
+  const ids = buildQueue().map((w) => w.id);
+  if (ids.length === 0) {
+    alert(db.words.length === 0 ? EMPTY_SCOPE_MSG.all : EMPTY_SCOPE_MSG[scope]);
     return;
   }
-  const ids = shuffle(db.words).map((w) => w.id);
   session = {
     mode,
     queue: ids,
@@ -85,6 +124,8 @@ function nextItem() {
 // 1問ぶんの結果を記録して次へ進む。まちがえた単語は少しあとにもう一度出す。
 function recordAnswer(correct) {
   const id = session.queue.shift();
+  const w = db.words.find((x) => x.id === id);
+  if (w) applyResult(w, correct, !correct && !session.missed.has(id));
   if (correct) {
     session.done++;
     if (!session.missed.has(id)) session.firstTry++;
@@ -324,7 +365,7 @@ let wordsFilter = "all";
 function renderWords() {
   const q = $("words-search").value.trim().toLowerCase();
   const list = db.words
-    .filter((w) => wordsFilter === "all" || w.type === wordsFilter)
+    .filter((w) => wordsFilter === "all" || (wordsFilter === "weak" ? isWeak(w) : w.type === wordsFilter))
     .filter((w) => !q || w.en.toLowerCase().includes(q) || w.ja.includes(q))
     .sort((a, b) => b.createdAt - a.createdAt);
 
@@ -339,11 +380,15 @@ function renderWords() {
         <span class="badge badge-${w.type}"></span>
         <span class="word-en" lang="en"></span>
         <span class="word-ja"></span>
+        <span class="word-status"></span>
       </button>
       <button type="button" class="btn-speak btn-speak-small" aria-label="読み上げ">🔊</button>`;
     li.querySelector(".badge").textContent = TYPE_LABEL[w.type];
     li.querySelector(".word-en").textContent = w.en;
     li.querySelector(".word-ja").textContent = w.ja;
+    const st = wordStatus(w);
+    li.querySelector(".word-status").textContent = st.text;
+    li.querySelector(".word-status").className = "word-status " + st.cls;
     li.querySelector(".word-main").addEventListener("click", () => openEdit(w.id));
     li.querySelector(".btn-speak").addEventListener("click", () => speakWord(w.en));
     ul.appendChild(li);
@@ -351,6 +396,13 @@ function renderWords() {
   if (list.length === 0) {
     ul.innerHTML = `<li class="word-empty">見つかりませんでした</li>`;
   }
+}
+
+function wordStatus(w) {
+  if (isNew(w)) return { text: "未学習", cls: "st-new" };
+  if (isMastered(w)) return { text: "✓ 覚えた", cls: "st-done" };
+  const dots = "●".repeat(w.level || 0) + "○".repeat(MASTERED_LEVEL - (w.level || 0));
+  return { text: `${dots}${isWeak(w) ? " 苦手" : ""}`, cls: isWeak(w) ? "st-weak" : "st-learning" };
 }
 
 $("words-search").addEventListener("input", renderWords);
