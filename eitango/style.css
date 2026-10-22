@@ -1,0 +1,310 @@
+:root {
+  --bg: #f3f6fb;
+  --panel: #ffffff;
+  --ink: #1d2433;
+  --sub: #5f6b80;
+  --line: #d9e0ec;
+  --primary: #2b5fab;
+  --primary-dark: #1f4a8a;
+  --good: #2e9d5b;
+  --bad: #e0663f;
+  --danger: #c0392b;
+  --word: #2b5fab;
+  --idiom: #8a4fbf;
+  --radius: 16px;
+  --tabbar-h: 64px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif;
+  font-size: 17px;
+  -webkit-text-size-adjust: 100%;
+}
+
+button, input, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
+
+.app {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  background: var(--primary);
+  color: #fff;
+  padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+  text-align: center;
+}
+.topbar-title { margin: 0; font-size: 1.15rem; letter-spacing: 0.05em; }
+
+.main {
+  flex: 1;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 16px 16px calc(var(--tabbar-h) + 24px + env(safe-area-inset-bottom));
+}
+
+.panel {
+  background: var(--panel);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(29, 36, 51, 0.06);
+}
+.panel + .panel { margin-top: 14px; }
+.center { text-align: center; }
+
+/* ---------- ボタン ---------- */
+.btn {
+  border: none;
+  border-radius: 14px;
+  padding: 12px 18px;
+  min-height: 52px;
+  font-weight: 700;
+  background: #e7ecf5;
+  color: var(--ink);
+  transition: transform 0.06s, filter 0.15s;
+}
+.btn:active { transform: scale(0.97); filter: brightness(0.93); }
+.btn-big { width: 100%; min-height: 64px; font-size: 1.2rem; }
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-good { background: var(--good); color: #fff; }
+.btn-bad { background: var(--bad); color: #fff; }
+.btn-danger { background: transparent; color: var(--danger); border: 2px solid var(--danger); width: 100%; margin-top: 18px; }
+.btn-ghost { background: transparent; border: 2px solid var(--line); color: var(--sub); }
+
+.btn-speak {
+  border: none;
+  background: #e7ecf5;
+  border-radius: 50%;
+  width: 56px;
+  height: 56px;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+.btn-speak:active { filter: brightness(0.9); }
+.btn-speak-small { width: 48px; height: 48px; font-size: 1.25rem; flex: none; }
+
+.badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #fff;
+  background: var(--word);
+}
+.badge-idiom { background: var(--idiom); }
+
+/* ---------- 入力 ---------- */
+.input {
+  width: 100%;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  min-height: 52px;
+  font-size: 1.1rem;  /* 16px 未満だと iPhone が勝手に拡大する */
+  background: #fff;
+}
+.input:focus { outline: none; border-color: var(--primary); }
+textarea.input { resize: vertical; }
+
+.seg {
+  display: flex;
+  background: #e7ecf5;
+  border-radius: 12px;
+  padding: 4px;
+  gap: 4px;
+}
+.seg-btn {
+  flex: 1;
+  border: none;
+  background: transparent;
+  border-radius: 9px;
+  min-height: 46px;
+  font-weight: 700;
+  color: var(--sub);
+}
+.seg-btn.is-on { background: #fff; color: var(--primary); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12); }
+
+/* ---------- ホーム ---------- */
+.home-line { margin: 0 0 16px; color: var(--sub); }
+.home-line b { color: var(--ink); font-size: 1.3rem; }
+
+/* ---------- 学習 ---------- */
+.study-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.study-head .btn { min-height: 44px; padding: 8px 16px; }
+.study-progress { font-weight: 700; color: var(--sub); font-size: 1.1rem; }
+
+.flashcard {
+  position: relative;
+  background: var(--panel);
+  border-radius: 22px;
+  box-shadow: 0 4px 16px rgba(29, 36, 51, 0.1);
+  padding: 24px 20px 20px;
+  min-height: 46vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 12px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.flashcard .badge { position: absolute; top: 16px; left: 16px; }
+.flashcard.is-flipped { animation: flip 0.28s ease-out; }
+@keyframes flip {
+  from { transform: perspective(900px) rotateY(-70deg); opacity: 0.4; }
+  to { transform: none; opacity: 1; }
+}
+
+.fc-en {
+  margin: 8px 0 0;
+  font-size: clamp(2rem, 9vw, 3rem);
+  font-weight: 800;
+  word-break: break-word;
+  line-height: 1.2;
+}
+.fc-ja {
+  margin: 0;
+  font-size: clamp(1.5rem, 6.5vw, 2rem);
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+.fc-back {
+  width: 100%;
+  border-top: 2px dashed var(--line);
+  padding-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.fc-example {
+  margin: 0;
+  color: var(--sub);
+  font-size: 1.1rem;
+  line-height: 1.5;
+}
+.fc-hint { margin: 0; color: var(--sub); font-size: 0.95rem; }
+
+.answer-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 16px;
+}
+.answer-buttons .btn { min-height: 76px; font-size: 1.3rem; }
+
+.done-title { font-size: 1.8rem; font-weight: 800; margin: 8px 0; }
+.done-line { color: var(--sub); margin: 0 0 20px; line-height: 1.6; }
+
+/* ---------- 単語帳 ---------- */
+.words-tools { display: grid; gap: 10px; }
+.words-count { color: var(--sub); margin: 14px 4px 8px; font-size: 0.95rem; }
+.word-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.word-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--panel);
+  border-radius: 14px;
+  padding: 6px 10px 6px 6px;
+  box-shadow: 0 1px 4px rgba(29, 36, 51, 0.05);
+}
+.word-main {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 10px 8px;
+  min-height: 56px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas: "badge en" "badge ja";
+  column-gap: 10px;
+  align-items: center;
+}
+.word-main .badge { grid-area: badge; }
+.word-en { grid-area: en; font-weight: 700; font-size: 1.1rem; overflow-wrap: anywhere; }
+.word-ja { grid-area: ja; color: var(--sub); font-size: 0.95rem; overflow-wrap: anywhere; }
+.word-empty { color: var(--sub); text-align: center; padding: 24px; }
+
+/* ---------- フォーム ---------- */
+.form { display: grid; gap: 16px; }
+.form-title { margin: 0; font-size: 1.25rem; }
+.field { display: grid; gap: 6px; }
+.field-label { font-weight: 700; color: var(--sub); font-size: 0.95rem; }
+.form-buttons { display: grid; grid-template-columns: 1fr 2fr; gap: 10px; }
+.form-warn { margin: 0; color: var(--danger); font-weight: 700; }
+.form-warn.is-ok { color: var(--good); }
+
+/* ---------- タブ ---------- */
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  background: #fff;
+  border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 10;
+}
+.tab {
+  flex: 1;
+  border: none;
+  background: transparent;
+  min-height: var(--tabbar-h);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--sub);
+}
+.tab-icon { font-size: 1.4rem; line-height: 1; }
+.tab.is-on { color: var(--primary); }
+
+/* ---------- タブレット横向き ---------- */
+/* カードを左、答えのボタンを右に並べて、画面の高さに収める */
+@media (orientation: landscape) and (min-width: 700px) {
+  .main { max-width: 1000px; }
+  .study-body {
+    display: grid;
+    grid-template-columns: 1fr 260px;
+    gap: 20px;
+    align-items: stretch;
+  }
+  .flashcard { min-height: 60vh; }
+  .answer-buttons {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 1fr;
+    margin-top: 0;
+  }
+  .answer-buttons .btn { min-height: 100px; }
+}
+
+/* スマホ横向きは高さが足りないので、カードを低くする */
+@media (orientation: landscape) and (max-height: 500px) {
+  .flashcard { min-height: 60vh; padding-top: 16px; }
+  .fc-en { font-size: 2rem; }
+}

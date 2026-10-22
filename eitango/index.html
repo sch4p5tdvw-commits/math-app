@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>英単語ノート</title>
+<meta name="description" content="自分で作る英単語・英熟語帳。カードめくりと音声で毎日少しずつ覚える">
+<meta name="theme-color" content="#2b5fab">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app">
+  <header class="topbar">
+    <h1 class="topbar-title">英単語ノート</h1>
+  </header>
+
+  <main class="main">
+
+    <!-- ホーム -->
+    <section id="view-home" class="view">
+      <div class="panel">
+        <p class="home-line">登録している単語・熟語：<b id="home-total">0</b></p>
+        <button type="button" class="btn btn-primary btn-big" id="start-cards">カードめくり</button>
+      </div>
+    </section>
+
+    <!-- 学習（カードめくり） -->
+    <section id="view-study" class="view" hidden>
+      <div class="study-head">
+        <button type="button" class="btn btn-ghost" id="study-quit">やめる</button>
+        <span class="study-progress" id="study-progress">1 / 10</span>
+      </div>
+
+      <div class="study-body">
+        <div class="flashcard" id="flashcard" role="button" tabindex="0" aria-label="タップで訳を見る">
+          <span class="badge" id="fc-type">単語</span>
+          <p class="fc-en" id="fc-en" lang="en"></p>
+          <button type="button" class="btn-speak" id="fc-speak" aria-label="もう一度聞く">🔊</button>
+          <p class="fc-example fc-example-front" id="fc-example-front" lang="en" hidden></p>
+          <div class="fc-back" id="fc-back" hidden>
+            <p class="fc-ja" id="fc-ja"></p>
+            <p class="fc-example" id="fc-example-back" lang="en" hidden></p>
+          </div>
+          <p class="fc-hint" id="fc-hint">タップして訳を見る</p>
+        </div>
+
+        <div class="answer-buttons" id="answer-buttons" hidden>
+          <button type="button" class="btn btn-bad btn-big" id="ans-unknown">知らない</button>
+          <button type="button" class="btn btn-good btn-big" id="ans-known">知ってる</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 学習のおわり -->
+    <section id="view-done" class="view" hidden>
+      <div class="panel center">
+        <p class="done-title">おつかれさま！</p>
+        <p class="done-line" id="done-summary"></p>
+        <button type="button" class="btn btn-primary btn-big" id="done-home">ホームへ</button>
+      </div>
+    </section>
+
+    <!-- 単語帳 -->
+    <section id="view-words" class="view" hidden>
+      <div class="words-tools">
+        <input type="search" id="words-search" class="input" placeholder="さがす（英語・日本語）" autocomplete="off">
+        <div class="seg" id="words-filter">
+          <button type="button" class="seg-btn is-on" data-filter="all">すべて</button>
+          <button type="button" class="seg-btn" data-filter="word">単語</button>
+          <button type="button" class="seg-btn" data-filter="idiom">熟語</button>
+        </div>
+        <button type="button" class="btn btn-primary btn-big" id="words-add">＋ 追加する</button>
+      </div>
+      <p class="words-count" id="words-count"></p>
+      <ul class="word-list" id="word-list"></ul>
+    </section>
+
+    <!-- 単語の追加・編集 -->
+    <section id="view-edit" class="view" hidden>
+      <form class="panel form" id="edit-form" autocomplete="off">
+        <h2 class="form-title" id="edit-title">単語を追加</h2>
+
+        <label class="field">
+          <span class="field-label">英語</span>
+          <input type="text" class="input" id="edit-en" lang="en" required
+                 autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="例）look for">
+        </label>
+
+        <label class="field">
+          <span class="field-label">日本語訳</span>
+          <input type="text" class="input" id="edit-ja" required placeholder="例）～を探す">
+        </label>
+
+        <div class="field">
+          <span class="field-label">種類</span>
+          <div class="seg" id="edit-type">
+            <button type="button" class="seg-btn is-on" data-type="word">単語</button>
+            <button type="button" class="seg-btn" data-type="idiom">熟語</button>
+          </div>
+        </div>
+
+        <label class="field">
+          <span class="field-label">例文（なくてもOK）</span>
+          <textarea class="input" id="edit-example" rows="2" lang="en"
+                    autocapitalize="sentences" spellcheck="false" placeholder="例）I am looking for my key."></textarea>
+        </label>
+
+        <p class="form-warn" id="edit-warn" hidden></p>
+
+        <div class="form-buttons">
+          <button type="button" class="btn btn-ghost btn-big" id="edit-cancel">もどる</button>
+          <button type="submit" class="btn btn-primary btn-big">保存</button>
+        </div>
+        <button type="button" class="btn btn-danger" id="edit-delete" hidden>この単語を削除</button>
+      </form>
+    </section>
+
+  </main>
+
+  <nav class="tabbar" id="tabbar">
+    <button type="button" class="tab is-on" data-view="home"><span class="tab-icon">🏠</span>ホーム</button>
+    <button type="button" class="tab" data-view="words"><span class="tab-icon">📒</span>単語帳</button>
+  </nav>
+</div>
+
+<script src="store.js"></script>
+<script src="speech.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
