@@ -21,18 +21,32 @@
     <section id="view-home" class="view">
       <div class="panel">
         <p class="home-line">登録している単語・熟語：<b id="home-total">0</b></p>
-        <button type="button" class="btn btn-primary btn-big" id="start-cards">カードめくり</button>
+        <div class="mode-buttons">
+          <button type="button" class="btn btn-primary btn-mode" data-mode="cards">
+            <span class="mode-icon">🃏</span><span class="mode-name">カードめくり</span>
+            <span class="mode-desc">英語を聞いて、訳を思い出す</span>
+          </button>
+          <button type="button" class="btn btn-mode btn-mode-ja2en" data-mode="ja2en">
+            <span class="mode-icon">✏️</span><span class="mode-name">日 → 英</span>
+            <span class="mode-desc">日本語を見て、英語を書く</span>
+          </button>
+          <button type="button" class="btn btn-mode btn-mode-en2ja" data-mode="en2ja">
+            <span class="mode-icon">🎧</span><span class="mode-name">英 → 日</span>
+            <span class="mode-desc">聞いて書いて、意味を4択で選ぶ</span>
+          </button>
+        </div>
       </div>
     </section>
 
-    <!-- 学習（カードめくり） -->
+    <!-- 学習 -->
     <section id="view-study" class="view" hidden>
       <div class="study-head">
         <button type="button" class="btn btn-ghost" id="study-quit">やめる</button>
         <span class="study-progress" id="study-progress">1 / 10</span>
       </div>
 
-      <div class="study-body">
+      <!-- カードめくり -->
+      <div class="study-body" id="mode-cards" hidden>
         <div class="flashcard" id="flashcard" role="button" tabindex="0" aria-label="タップで訳を見る">
           <span class="badge" id="fc-type">単語</span>
           <p class="fc-en" id="fc-en" lang="en"></p>
@@ -50,6 +64,57 @@
           <button type="button" class="btn btn-good btn-big" id="ans-known">知ってる</button>
         </div>
       </div>
+
+      <!-- 日 → 英 -->
+      <div class="study-body" id="mode-ja2en" hidden>
+        <div class="quiz-card">
+          <span class="badge" id="je-type">単語</span>
+          <p class="quiz-ask">英語で書くと？</p>
+          <p class="quiz-ja" id="je-ja"></p>
+          <p class="quiz-hint" id="je-hint" lang="en" hidden></p>
+        </div>
+        <div class="quiz-side">
+          <form class="quiz-form" id="je-form" autocomplete="off">
+            <input type="text" class="input input-answer" id="je-input" lang="en"
+                   autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done"
+                   placeholder="ここに英語を入力">
+            <div class="btn-row">
+              <button type="button" class="btn btn-big" id="je-hint-btn">ヒント</button>
+              <button type="submit" class="btn btn-primary btn-big">答え合わせ</button>
+            </div>
+            <button type="button" class="btn btn-ghost btn-big" id="je-giveup">わからない</button>
+          </form>
+          <div class="feedback" id="je-feedback" hidden></div>
+        </div>
+      </div>
+
+      <!-- 英 → 日 -->
+      <div class="study-body" id="mode-en2ja" hidden>
+        <div class="quiz-card">
+          <span class="badge" id="ej-type">単語</span>
+          <p class="quiz-ask" id="ej-ask">聞こえた英語を書こう</p>
+          <div class="listen-buttons" id="ej-listen">
+            <button type="button" class="btn-speak btn-speak-big" id="ej-play" aria-label="もう一度聞く">🔊</button>
+            <button type="button" class="btn btn-ghost" id="ej-slow">🐢 ゆっくり</button>
+          </div>
+          <p class="quiz-en" id="ej-en" lang="en" hidden></p>
+          <p class="fc-example" id="ej-example" lang="en" hidden></p>
+        </div>
+        <div class="quiz-side">
+          <form class="quiz-form" id="ej-form" autocomplete="off">
+            <input type="text" class="input input-answer" id="ej-input" lang="en"
+                   autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done"
+                   placeholder="聞こえた英語を入力">
+            <div class="btn-row">
+              <button type="button" class="btn btn-ghost btn-big" id="ej-giveup">わからない</button>
+              <button type="submit" class="btn btn-primary btn-big">答え合わせ</button>
+            </div>
+          </form>
+          <p class="spell-result" id="ej-spell" hidden></p>
+          <div class="choices" id="ej-choices" hidden></div>
+          <div class="feedback" id="ej-feedback" hidden></div>
+        </div>
+      </div>
     </section>
 
     <!-- 学習のおわり -->
@@ -57,6 +122,10 @@
       <div class="panel center">
         <p class="done-title">おつかれさま！</p>
         <p class="done-line" id="done-summary"></p>
+        <div class="done-missed" id="done-missed" hidden>
+          <p class="done-missed-title">まちがえた・知らなかった単語</p>
+          <ul class="done-missed-list" id="done-missed-list"></ul>
+        </div>
         <button type="button" class="btn btn-primary btn-big" id="done-home">ホームへ</button>
       </div>
     </section>
@@ -164,6 +233,7 @@
 <script src="store.js"></script>
 <script src="speech.js"></script>
 <script src="csv.js"></script>
+<script src="quiz.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -1,16 +1,12 @@
 const $ = (id) => document.getElementById(id);
 
-function shuffle(list) {
-  const a = list.slice();
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
+function speakWord(text, slow) {
+  const rate = slow ? Math.max(0.5, db.settings.rate - 0.3) : db.settings.rate;
+  Speech.speak(text, { rate, voiceURI: db.settings.voiceURI });
 }
 
-function speakWord(text) {
-  Speech.speak(text, { rate: db.settings.rate, voiceURI: db.settings.voiceURI });
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 }
 
 // ---------------------------------------------------------------
@@ -42,39 +38,115 @@ function renderHome() {
 }
 
 // ---------------------------------------------------------------
-// カードめくり
+// 学習の流れ（3つの出し方で共通）
 // ---------------------------------------------------------------
+const MODES = {
+  cards: { show: showCard },
+  ja2en: { show: showJa2En },
+  en2ja: { show: showEn2Ja },
+};
+
 let session = null;
 
-function startCards() {
+function startSession(mode) {
   if (db.words.length === 0) {
     alert("単語帳に単語がありません。先に「単語帳」から追加してください。");
     return;
   }
+  const ids = shuffle(db.words).map((w) => w.id);
   session = {
-    queue: shuffle(db.words).map((w) => w.id),
-    total: db.words.length,
+    mode,
+    queue: ids,
+    total: ids.length,
     done: 0,
-    known: 0,
-    retried: new Set(),
+    firstTry: 0,
+    missed: new Set(), // 一度でもまちがえた・知らなかった単語
+    pending: null, // 答え合わせのあと「次へ」を押すまでの結果
   };
+  for (const m of Object.keys(MODES)) $("mode-" + m).hidden = m !== mode;
   show("study");
-  showCard();
+  nextItem();
 }
 
 function currentWord() {
-  return db.words.find((w) => w.id === session.queue[0]) || null;
+  return session && db.words.find((w) => w.id === session.queue[0]) || null;
 }
 
-function showCard() {
+function nextItem() {
   const w = currentWord();
   if (!w) {
     finishSession();
     return;
   }
   $("study-progress").textContent = `${session.done + 1} / ${session.total}`;
-  $("fc-type").textContent = TYPE_LABEL[w.type];
-  $("fc-type").className = "badge badge-" + w.type;
+  MODES[session.mode].show(w);
+}
+
+// 1問ぶんの結果を記録して次へ進む。まちがえた単語は少しあとにもう一度出す。
+function recordAnswer(correct) {
+  const id = session.queue.shift();
+  if (correct) {
+    session.done++;
+    if (!session.missed.has(id)) session.firstTry++;
+  } else {
+    session.missed.add(id);
+    session.queue.splice(Math.min(session.queue.length, 3), 0, id);
+  }
+  nextItem();
+}
+
+function finishSession() {
+  const s = session;
+  session = null;
+  const word = s.mode === "cards" ? "知ってた" : "1回で正解した";
+  $("done-summary").textContent = `${s.total}語のうち、${word}のは ${s.firstTry}語でした。`;
+  const missed = db.words.filter((w) => s.missed.has(w.id));
+  $("done-missed").hidden = missed.length === 0;
+  $("done-missed-list").innerHTML = missed
+    .map((w) => `<li><b lang="en">${escapeHtml(w.en)}</b>　${escapeHtml(w.ja)}</li>`)
+    .join("");
+  show("done");
+}
+
+function setTypeBadge(el, w) {
+  el.textContent = TYPE_LABEL[w.type];
+  el.className = "badge badge-" + w.type;
+}
+
+// 答え合わせのあとに出す、正解・訳・例文と「次へ」
+function renderFeedback(el, ok, w, opts = {}) {
+  el.innerHTML = `
+    <p class="fb-mark ${ok ? "is-ok" : "is-ng"}">${ok ? "⭕ 正解！" : "❌ ざんねん"}</p>
+    <div class="fb-word">
+      <div>
+        <p class="fb-en" lang="en">${escapeHtml(w.en)}</p>
+        <p class="fb-ja">${escapeHtml(w.ja)}</p>
+      </div>
+      <button type="button" class="btn-speak btn-speak-small" data-act="speak" aria-label="読み上げ">🔊</button>
+    </div>
+    ${w.example ? `<p class="fc-example" lang="en">${escapeHtml(w.example)}</p>` : ""}
+    ${opts.yours ? `<p class="fb-yours">あなたの答え：<span lang="en">${escapeHtml(opts.yours)}</span></p>` : ""}
+    <button type="button" class="btn btn-primary btn-big" data-act="next">次へ</button>
+    ${opts.canOverride ? `<button type="button" class="btn btn-ghost" data-act="override">今のは合ってた（正解にする）</button>` : ""}`;
+  el.hidden = false;
+  el.querySelector('[data-act="speak"]').addEventListener("click", () => speakWord(w.en));
+  el.querySelector('[data-act="next"]').addEventListener("click", () => recordAnswer(session.pending));
+  const ov = el.querySelector('[data-act="override"]');
+  if (ov) {
+    ov.addEventListener("click", () => {
+      session.pending = true;
+      renderFeedback(el, true, w);
+    });
+  }
+  el.querySelector('[data-act="next"]').focus({ preventScroll: true });
+  el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+// ---------------------------------------------------------------
+// カードめくり
+// ---------------------------------------------------------------
+function showCard(w) {
+  setTypeBadge($("fc-type"), w);
   $("fc-en").textContent = w.en;
   $("fc-ja").textContent = w.ja;
 
@@ -100,28 +172,6 @@ function flipCard() {
   $("flashcard").classList.add("is-flipped");
 }
 
-function answerCard(known) {
-  const id = session.queue.shift();
-  if (known) {
-    session.done++;
-    if (!session.retried.has(id)) session.known++;
-  } else {
-    // 知らなかったカードは少しあとにもう一度出す
-    session.retried.add(id);
-    const pos = Math.min(session.queue.length, 3);
-    session.queue.splice(pos, 0, id);
-  }
-  showCard();
-}
-
-function finishSession() {
-  const s = session;
-  session = null;
-  $("done-summary").textContent = `${s.total}語のうち、はじめから知ってたのは ${s.known}語でした。`;
-  show("done");
-}
-
-$("start-cards").addEventListener("click", startCards);
 $("flashcard").addEventListener("click", (e) => {
   if (e.target.closest(".btn-speak")) return;
   flipCard();
@@ -136,8 +186,130 @@ $("fc-speak").addEventListener("click", () => {
   const w = currentWord();
   if (w) speakWord(w.en);
 });
-$("ans-known").addEventListener("click", () => answerCard(true));
-$("ans-unknown").addEventListener("click", () => answerCard(false));
+$("ans-known").addEventListener("click", () => recordAnswer(true));
+$("ans-unknown").addEventListener("click", () => recordAnswer(false));
+
+// ---------------------------------------------------------------
+// 日 → 英（日本語を見て英語を書く）
+// ---------------------------------------------------------------
+function showJa2En(w) {
+  setTypeBadge($("je-type"), w);
+  $("je-ja").textContent = w.ja;
+  $("je-hint").hidden = true;
+  $("je-input").value = "";
+  $("je-form").hidden = false;
+  $("je-feedback").hidden = true;
+  $("je-input").focus();
+}
+
+function answerJa2En(given) {
+  const w = currentWord();
+  const ok = given !== null && isCorrectAnswer(given, w.en);
+  session.pending = ok;
+  $("je-input").blur();
+  $("je-form").hidden = true;
+  $("je-hint").hidden = true;
+  speakWord(w.en);
+  // 書いたけれど合わなかったときだけ「正解にする」を出す（別の言い方で書いた場合など）
+  renderFeedback($("je-feedback"), ok, w, { yours: ok ? "" : given, canOverride: !ok && !!given });
+}
+
+$("je-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const v = $("je-input").value.trim();
+  if (v) answerJa2En(v);
+});
+$("je-giveup").addEventListener("click", () => answerJa2En(null));
+$("je-hint-btn").addEventListener("click", () => {
+  const w = currentWord();
+  $("je-hint").textContent = hintFor(w.en);
+  $("je-hint").hidden = false;
+  $("je-input").focus();
+});
+
+// ---------------------------------------------------------------
+// 英 → 日（聞いて英語を書く → 意味を4択）
+// ---------------------------------------------------------------
+function showEn2Ja(w) {
+  session.spellOk = false;
+  setTypeBadge($("ej-type"), w);
+  $("ej-ask").textContent = "聞こえた英語を書こう";
+  $("ej-listen").hidden = false;
+  $("ej-en").hidden = true;
+  $("ej-example").hidden = true;
+  $("ej-input").value = "";
+  $("ej-form").hidden = false;
+  $("ej-spell").hidden = true;
+  $("ej-choices").hidden = true;
+  $("ej-feedback").hidden = true;
+  speakWord(w.en);
+  $("ej-input").focus();
+}
+
+function answerEn2JaSpelling(given) {
+  const w = currentWord();
+  const ok = given !== null && isCorrectAnswer(given, w.en);
+  session.spellOk = ok;
+  $("ej-input").blur();
+  $("ej-form").hidden = true;
+
+  // つづりの答え合わせ。ここで英語を見せてから、意味を選ぶ
+  $("ej-en").textContent = w.en;
+  $("ej-en").hidden = false;
+  if (w.example) {
+    $("ej-example").textContent = w.example;
+    $("ej-example").hidden = false;
+  }
+  const spell = $("ej-spell");
+  spell.className = "spell-result " + (ok ? "is-ok" : "is-ng");
+  spell.innerHTML = ok
+    ? "⭕ つづり正解！"
+    : given
+      ? `❌ つづりがちがいます（あなたの答え：<span lang="en">${escapeHtml(given)}</span>）`
+      : "❌ 正しいつづりを確かめよう";
+  spell.hidden = false;
+  $("ej-ask").textContent = "意味はどれ？";
+
+  const box = $("ej-choices");
+  box.innerHTML = "";
+  for (const c of makeChoices(w, db.words)) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "btn choice";
+    b.textContent = c.ja;
+    b.dataset.correct = c.id === w.id ? "1" : "";
+    b.addEventListener("click", () => answerEn2JaMeaning(b));
+    box.appendChild(b);
+  }
+  box.hidden = false;
+}
+
+function answerEn2JaMeaning(btn) {
+  const w = currentWord();
+  const meaningOk = btn.dataset.correct === "1";
+  for (const b of $("ej-choices").querySelectorAll(".choice")) {
+    b.disabled = true;
+    if (b.dataset.correct) b.classList.add("is-correct");
+  }
+  if (!meaningOk) btn.classList.add("is-wrong");
+  // つづりと意味の両方が合って正解
+  session.pending = session.spellOk && meaningOk;
+  renderFeedback($("ej-feedback"), session.pending, w);
+}
+
+$("ej-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const v = $("ej-input").value.trim();
+  if (v) answerEn2JaSpelling(v);
+});
+$("ej-giveup").addEventListener("click", () => answerEn2JaSpelling(null));
+$("ej-play").addEventListener("click", () => speakWord(currentWord().en));
+$("ej-slow").addEventListener("click", () => speakWord(currentWord().en, true));
+
+// ---------------------------------------------------------------
+for (const b of document.querySelectorAll(".btn-mode")) {
+  b.addEventListener("click", () => startSession(b.dataset.mode));
+}
 $("study-quit").addEventListener("click", () => {
   session = null;
   show("home");
