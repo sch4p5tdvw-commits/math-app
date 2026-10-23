@@ -23,15 +23,19 @@ const Speech = {
     return us.find((v) => v.localService) || us[0] || this.voices.find((v) => v.localService) || this.voices[0] || null;
   },
 
+  // text に配列を渡すと、順番に続けて読む（単語のあとに例文、など）
   speak(text, opts = {}) {
-    if (!this.supported || !text) return;
+    const texts = [].concat(text).filter(Boolean);
+    if (!this.supported || texts.length === 0) return;
     speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
     const voice = this.pickVoice(opts.voiceURI);
-    if (voice) u.voice = voice;
-    u.lang = voice ? voice.lang : "en-US";
-    u.rate = opts.rate || 0.9;
-    speechSynthesis.speak(u);
+    for (const t of texts) {
+      const u = new SpeechSynthesisUtterance(t);
+      if (voice) u.voice = voice;
+      u.lang = voice ? voice.lang : "en-US";
+      u.rate = opts.rate || 0.9;
+      speechSynthesis.speak(u);
+    }
   },
 
   stop() {

@@ -263,6 +263,10 @@ function check(name, ok, detail) {
     window.__sfx = [];
     const play = Sfx.play.bind(Sfx);
     Sfx.play = (k) => { window.__sfx.push(k); return play(k); };
+    // 読み上げた文を記録する（配列は「|」でつないで1回分）
+    window.__said = [];
+    const speak = Speech.speak.bind(Speech);
+    Speech.speak = (t, o) => { window.__said.push([].concat(t).filter(Boolean).join(" | ")); return speak(t, o); };
     db.words.push(makeWord("many", "（数えられる）たくさんの", "word", "I have many friends.", "私には友だちがたくさんいます。"));
     saveDB();
   });
@@ -274,6 +278,8 @@ function check(name, ok, detail) {
     nextItem();
   }, [mode, en]);
   const sfx = () => p.evaluate(() => window.__sfx.splice(0).join(","));
+  // 効果音のあとに読み上げるまで待ってから、読んだものを取り出す
+  const said = async () => { await p.waitForTimeout(900); return p.evaluate(() => window.__said.splice(0)); };
 
   await startWith("ja2en", "a lot of");
   await tapKeys("many");
@@ -284,6 +290,7 @@ function check(name, ok, detail) {
   await tapKeys("a lot of");
   await p.keyboard.press("Enter");
   check("正解でピンポン", (await sfx()) === "correct");
+  check("ピンポンのあと単語と例文を読む", (await said()).pop() === "a lot of | There are a lot of books in my room.");
   check("答え合わせのあとに例文", await p.isVisible("#je-feedback .example"));
   check("例文の訳ははじめ隠す", await p.isHidden("#je-feedback .ex-ja"));
   await p.click("#je-feedback .example");
@@ -304,8 +311,10 @@ function check(name, ok, detail) {
   await tapKeys("aple");
   await p.click('#ej-form button[type="submit"]');
   check("つづりをまちがえるとブブー", (await sfx()) === "wrong");
+  check("意味を選ぶ前は例文を読まない", (await said()).pop() === "apple");
   await p.click('.choice[data-correct="1"]');
   check("つづりをまちがえても意味が合えばピンポン", (await sfx()) === "correct");
+  check("4択のあと単語と例文を読む", (await said()).pop() === "apple | I eat an apple every morning.");
   await p.click('#ej-feedback [data-act="next"]');
   check("つづりをまちがえた単語は苦手に入る", await p.evaluate(() => isWeak(db.words.find((w) => w.en === "apple"))));
   await p.click("#study-quit");

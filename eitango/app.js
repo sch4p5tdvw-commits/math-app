@@ -5,7 +5,8 @@ function speakWord(text, slow) {
   Speech.speak(text, { rate, voiceURI: db.settings.voiceURI });
 }
 
-// 効果音のあとに英語を読み上げる（音が重ならないように少し待つ）
+// 効果音のあとに英語を読み上げる（音が重ならないように少し待つ）。
+// text に配列を渡すと続けて読む
 let speakTimer = null;
 function speakAfterSfx(text, played) {
   clearTimeout(speakTimer);
@@ -369,7 +370,8 @@ function answerJa2En(given) {
   $("je-form").hidden = true;
   $("je-hint").hidden = true;
   $("je-alt").hidden = true;
-  speakAfterSfx(w.en, playResult(ok));
+  // ピンポン（ブブー）→ 単語 → 例文 の順に聞かせる
+  speakAfterSfx([w.en, w.example], playResult(ok));
   // 書いたけれど合わなかったときだけ「正解にする」を出す（別の言い方で書いた場合など）
   renderFeedback($("je-feedback"), ok, w, { yours: ok ? "" : given, canOverride: !ok && !!given });
 }
@@ -474,7 +476,7 @@ function answerEn2JaMeaning(btn) {
   // 4択の答え合わせは意味だけで決める。ただし記録は、つづりと意味の両方が合って正解
   // （つづりをまちがえた単語は苦手として復習に入れる）
   session.pending = session.spellOk && meaningOk;
-  playResult(meaningOk);
+  speakAfterSfx([w.en, w.example], playResult(meaningOk));
   const spellMissed = meaningOk && !session.spellOk;
   renderFeedback($("ej-feedback"), meaningOk, w, {
     mark: spellMissed ? "⭕ 意味は正解！" : "",
