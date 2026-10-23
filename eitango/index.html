@@ -40,6 +40,13 @@
       </div>
 
       <div class="panel home-modes">
+        <p class="field-label field-label-top">学年</p>
+        <div class="seg seg-grade" id="grade-filter">
+          <button type="button" class="seg-btn is-on" data-grade="0">すべて</button>
+          <button type="button" class="seg-btn" data-grade="1">1年</button>
+          <button type="button" class="seg-btn" data-grade="2">2年</button>
+          <button type="button" class="seg-btn" data-grade="3">3年</button>
+        </div>
         <p class="field-label field-label-top">出題する単語</p>
         <div class="seg seg-scope" id="scope">
           <button type="button" class="seg-btn is-on" data-scope="today">今日の分</button>
@@ -84,10 +91,9 @@
           <span class="badge" id="fc-type">単語</span>
           <p class="fc-en" id="fc-en" lang="en"></p>
           <button type="button" class="btn-speak" id="fc-speak" aria-label="もう一度聞く">🔊</button>
-          <p class="fc-example fc-example-front" id="fc-example-front" lang="en" hidden></p>
           <div class="fc-back" id="fc-back" hidden>
             <p class="fc-ja" id="fc-ja"></p>
-            <p class="fc-example" id="fc-example-back" lang="en" hidden></p>
+            <div id="fc-example-back"></div>
           </div>
           <p class="fc-hint" id="fc-hint">タップして訳を見る</p>
         </div>
@@ -113,6 +119,7 @@
                    autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done"
                    placeholder="ここに英語を入力">
             <p class="input-warn" id="je-warn" hidden>日本語が入っています。キーボードを英語（ABC）に切りかえてね</p>
+            <p class="input-alt" id="je-alt" hidden></p>
             <div class="kb-slot"></div>
             <div class="btn-row btn-row-3">
               <button type="button" class="btn btn-ghost btn-big" id="je-giveup">わからない</button>
@@ -134,7 +141,6 @@
             <button type="button" class="btn btn-ghost" id="ej-slow">🐢 ゆっくり</button>
           </div>
           <p class="quiz-en" id="ej-en" lang="en" hidden></p>
-          <p class="fc-example" id="ej-example" lang="en" hidden></p>
         </div>
         <div class="quiz-side">
           <form class="quiz-form" id="ej-form" autocomplete="off">
@@ -178,6 +184,12 @@
           <button type="button" class="seg-btn" data-filter="idiom">熟語</button>
           <button type="button" class="seg-btn" data-filter="weak">苦手</button>
         </div>
+        <div class="seg" id="words-grade">
+          <button type="button" class="seg-btn is-on" data-grade="0">全学年</button>
+          <button type="button" class="seg-btn" data-grade="1">1年</button>
+          <button type="button" class="seg-btn" data-grade="2">2年</button>
+          <button type="button" class="seg-btn" data-grade="3">3年</button>
+        </div>
         <button type="button" class="btn btn-primary btn-big" id="words-add">＋ 追加する</button>
       </div>
       <p class="words-count" id="words-count"></p>
@@ -209,10 +221,25 @@
           </div>
         </div>
 
+        <div class="field">
+          <span class="field-label">学年</span>
+          <div class="seg" id="edit-grade">
+            <button type="button" class="seg-btn is-on" data-grade="0">なし</button>
+            <button type="button" class="seg-btn" data-grade="1">1年</button>
+            <button type="button" class="seg-btn" data-grade="2">2年</button>
+            <button type="button" class="seg-btn" data-grade="3">3年</button>
+          </div>
+        </div>
+
         <label class="field">
           <span class="field-label">例文（なくてもOK）</span>
           <textarea class="input" id="edit-example" rows="2" lang="en"
                     autocapitalize="sentences" spellcheck="false" placeholder="例）I am looking for my key."></textarea>
+        </label>
+
+        <label class="field">
+          <span class="field-label">例文の訳（なくてもOK）</span>
+          <textarea class="input" id="edit-example-ja" rows="2" placeholder="例）私は鍵を探しています。"></textarea>
         </label>
 
         <p class="form-warn" id="edit-warn" hidden></p>
@@ -230,8 +257,8 @@
       <div class="panel">
         <h2 class="panel-title">CSVで一括登録・書き出し</h2>
         <p class="note">
-          列は <b>英語, 日本語訳, 種類, 例文</b> の順です。種類は「単語」か「熟語」（空欄ならスペース入りを熟語とみなします）。
-          例文はなくてもかまいません。1行目が見出しでもそのまま読み込めます。
+          列は <b>英語, 日本語訳, 種類, 例文, 例文の訳, 学年</b> の順です。種類は「単語」か「熟語」（空欄ならスペース入りを熟語とみなします）。
+          例文・例文の訳・学年（1年／2年／3年）はなくてもかまいません。1行目が見出しでもそのまま読み込めます。
         </p>
         <p class="note">同じ英語がすでにあるときは、訳・種類・例文を上書きします（例文の欄が空なら元の例文を残します。覚えた記録も残ります）。</p>
         <div class="btn-row">
@@ -240,6 +267,18 @@
         </div>
         <input type="file" id="csv-file" accept=".csv,text/csv,text/plain" hidden>
         <p class="result-box" id="csv-result" hidden></p>
+      </div>
+
+      <div class="panel">
+        <h2 class="panel-title">学年別の単語セット</h2>
+        <p class="note">
+          中学校で習う基本の単語・熟語を、学年ごとに単語帳へ追加できます。
+          このアプリ用に作ったもので、例文と例文の訳つきです。
+          学年は文法を習う順番に合わせた目安なので、教科書とちがうときは単語の編集画面で直せます。
+        </p>
+        <p class="note">すでに同じ英語があるときは、自分で入れた訳や例文はそのままにします。</p>
+        <div class="pack-list" id="pack-list"></div>
+        <p class="result-box" id="pack-result" hidden></p>
       </div>
 
       <div class="panel">
@@ -267,6 +306,10 @@
       <div class="panel">
         <h2 class="panel-title">音声</h2>
         <p class="form-warn" id="speech-unsupported" hidden>このブラウザは読み上げに対応していません。</p>
+        <label class="switch-row">
+          <span>正解・不正解の音（ピンポン・ブブー）</span>
+          <input type="checkbox" id="set-sfx" class="switch">
+        </label>
         <label class="switch-row">
           <span>カードを出したら自動で読み上げる</span>
           <input type="checkbox" id="set-autospeak" class="switch">
@@ -307,9 +350,11 @@
 
 <script src="store.js"></script>
 <script src="speech.js"></script>
+<script src="sound.js"></script>
 <script src="csv.js"></script>
 <script src="quiz.js"></script>
 <script src="srs.js"></script>
+<script src="wordbank.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

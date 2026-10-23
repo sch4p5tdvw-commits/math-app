@@ -58,14 +58,22 @@ function applyResult(w, correct, firstMiss) {
   saveDB();
 }
 
+// ホームで選んだ学年の単語か（「すべて」なら学年なしの単語も含む）
+function inGrade(w) {
+  const g = db.settings.gradeFilter;
+  return !g || w.grade === g;
+}
+
 // 今日やる単語。まちがえた・知らなかった単語を先頭に、復習、新しい単語の順。
+// ホームで学年を選んでいれば、その学年の単語だけ。
 function todayQueue() {
   const today = todayStr();
-  const due = shuffle(db.words.filter((w) => !isNew(w) && w.due <= today)).sort(
+  const words = db.words.filter(inGrade);
+  const due = shuffle(words.filter((w) => !isNew(w) && w.due <= today)).sort(
     (a, b) => (a.level || 0) - (b.level || 0) || (b.lapses || 0) - (a.lapses || 0) || a.due.localeCompare(b.due)
   );
   const newLeft = Math.max(0, db.settings.newPerDay - dayLog(today).newCount);
-  const fresh = db.words
+  const fresh = words
     .filter(isNew)
     .sort((a, b) => a.createdAt - b.createdAt)
     .slice(0, newLeft);
@@ -74,7 +82,7 @@ function todayQueue() {
 
 // 苦手な単語だけ。レベルが低く、まちがえた回数が多いものから。
 function weakQueue() {
-  return shuffle(db.words.filter(isWeak)).sort(
+  return shuffle(db.words.filter((w) => inGrade(w) && isWeak(w))).sort(
     (a, b) => (a.level || 0) - (b.level || 0) || (b.lapses || 0) - (a.lapses || 0)
   );
 }
