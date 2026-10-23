@@ -290,6 +290,7 @@ function showJa2En(w) {
   $("je-ja").textContent = w.ja;
   $("je-hint").hidden = true;
   $("je-input").value = "";
+  $("je-warn").hidden = true;
   $("je-form").hidden = false;
   $("je-feedback").hidden = true;
   $("je-input").focus();
@@ -307,9 +308,30 @@ function answerJa2En(given) {
   renderFeedback($("je-feedback"), ok, w, { yours: ok ? "" : given, canOverride: !ok && !!given });
 }
 
+// かなや漢字が入っていたら、キーボードが日本語のままなので採点せずに知らせる
+// （「be動詞」の漢字は答えの一部として書いてよい）
+function hasJapanese(s) {
+  return /[\u3040-\u30ff\u3400-\u9fff]/.test(s.replace(/be\s*動詞/gi, ""));
+}
+
+function readAnswer(inputId, warnId) {
+  const v = $(inputId).value.trim();
+  if (!v) return null;
+  if (hasJapanese(v)) {
+    $(warnId).hidden = false;
+    $(inputId).focus();
+    return null;
+  }
+  return v;
+}
+
+for (const [inputId, warnId] of [["je-input", "je-warn"], ["ej-input", "ej-warn"]]) {
+  $(inputId).addEventListener("input", () => ($(warnId).hidden = true));
+}
+
 $("je-form").addEventListener("submit", (e) => {
   e.preventDefault();
-  const v = $("je-input").value.trim();
+  const v = readAnswer("je-input", "je-warn");
   if (v) answerJa2En(v);
 });
 $("je-giveup").addEventListener("click", () => answerJa2En(null));
@@ -331,6 +353,7 @@ function showEn2Ja(w) {
   $("ej-en").hidden = true;
   $("ej-example").hidden = true;
   $("ej-input").value = "";
+  $("ej-warn").hidden = true;
   $("ej-form").hidden = false;
   $("ej-spell").hidden = true;
   $("ej-choices").hidden = true;
@@ -392,7 +415,7 @@ function answerEn2JaMeaning(btn) {
 
 $("ej-form").addEventListener("submit", (e) => {
   e.preventDefault();
-  const v = $("ej-input").value.trim();
+  const v = readAnswer("ej-input", "ej-warn");
   if (v) answerEn2JaSpelling(v);
 });
 $("ej-giveup").addEventListener("click", () => answerEn2JaSpelling(null));

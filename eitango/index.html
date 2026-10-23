@@ -108,9 +108,11 @@
         </div>
         <div class="quiz-side">
           <form class="quiz-form" id="je-form" autocomplete="off">
-            <input type="text" class="input input-answer" id="je-input" lang="en"
-                   autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done"
+            <!-- inputmode="email" で英字のキーボードを出し、日本語の変換や予測変換を出さない -->
+            <input type="text" class="input input-answer" id="je-input" lang="en" inputmode="email"
+                   autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done"
                    placeholder="ここに英語を入力">
+            <p class="input-warn" id="je-warn" hidden>日本語が入っています。キーボードを英語（ABC）に切りかえてね</p>
             <div class="btn-row">
               <button type="button" class="btn btn-big" id="je-hint-btn">ヒント</button>
               <button type="submit" class="btn btn-primary btn-big">答え合わせ</button>
@@ -135,9 +137,10 @@
         </div>
         <div class="quiz-side">
           <form class="quiz-form" id="ej-form" autocomplete="off">
-            <input type="text" class="input input-answer" id="ej-input" lang="en"
-                   autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done"
+            <input type="text" class="input input-answer" id="ej-input" lang="en" inputmode="email"
+                   autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done"
                    placeholder="聞こえた英語を入力">
+            <p class="input-warn" id="ej-warn" hidden>日本語が入っています。キーボードを英語（ABC）に切りかえてね</p>
             <div class="btn-row">
               <button type="button" class="btn btn-ghost btn-big" id="ej-giveup">わからない</button>
               <button type="submit" class="btn btn-primary btn-big">答え合わせ</button>
@@ -186,8 +189,8 @@
 
         <label class="field">
           <span class="field-label">英語</span>
-          <input type="text" class="input" id="edit-en" lang="en" required
-                 autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="例）look for">
+          <input type="text" class="input" id="edit-en" lang="en" required inputmode="email"
+                 autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="例）look for">
           <span class="field-note">be動詞を使う熟語は「be good at」と入力すると「be動詞 good at」と表示されます</span>
         </label>
 

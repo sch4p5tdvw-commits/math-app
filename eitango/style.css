@@ -291,6 +291,7 @@ textarea.input { resize: vertical; }
 
 .quiz-side { margin-top: 14px; display: grid; gap: 12px; }
 .quiz-form { display: grid; gap: 10px; }
+.input-warn { margin: 0; color: var(--bad); font-weight: 700; text-align: center; }
 .input-answer { font-size: 1.4rem; min-height: 60px; text-align: center; }
 
 .spell-result {

@@ -171,6 +171,12 @@ function check(name, ok, detail) {
   const weak = await p.evaluate(() => session.queue.map((id) => db.words.find((w) => w.id === id).en));
   check("苦手だけ = 知らなかった2語", weak.length === 2 && weak.includes("apple"), weak.join(","));
   const target = await en();
+  check("答えの欄は英字キーボード", (await p.getAttribute("#je-input", "inputmode")) === "email");
+  await p.fill("#je-input", "あっぷる");
+  await p.press("#je-input", "Enter");
+  check("かなは採点せずに知らせる", (await p.isVisible("#je-warn")) && (await p.isHidden("#je-feedback")));
+  await p.fill("#je-input", "x");
+  check("入力し直すと注意が消える", await p.isHidden("#je-warn"));
   await p.click("#je-hint-btn");
   check("ヒント", (await p.textContent("#je-hint")) === (await p.evaluate((e) => hintFor(e), target)));
   await p.fill("#je-input", target + "x");
