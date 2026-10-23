@@ -291,9 +291,10 @@ function showJa2En(w) {
   $("je-hint").hidden = true;
   $("je-input").value = "";
   $("je-warn").hidden = true;
+  attachKeyboard("je-form");
   $("je-form").hidden = false;
   $("je-feedback").hidden = true;
-  $("je-input").focus();
+  focusAnswer("je-input");
 }
 
 function answerJa2En(given) {
@@ -319,7 +320,7 @@ function readAnswer(inputId, warnId) {
   if (!v) return null;
   if (hasJapanese(v)) {
     $(warnId).hidden = false;
-    $(inputId).focus();
+    focusAnswer(inputId);
     return null;
   }
   return v;
@@ -339,7 +340,7 @@ $("je-hint-btn").addEventListener("click", () => {
   const w = currentWord();
   $("je-hint").textContent = hintFor(w.en);
   $("je-hint").hidden = false;
-  $("je-input").focus();
+  focusAnswer("je-input");
 });
 
 // ---------------------------------------------------------------
@@ -354,12 +355,13 @@ function showEn2Ja(w) {
   $("ej-example").hidden = true;
   $("ej-input").value = "";
   $("ej-warn").hidden = true;
+  attachKeyboard("ej-form");
   $("ej-form").hidden = false;
   $("ej-spell").hidden = true;
   $("ej-choices").hidden = true;
   $("ej-feedback").hidden = true;
   speakWord(w.en);
-  $("ej-input").focus();
+  focusAnswer("ej-input");
 }
 
 function answerEn2JaSpelling(given) {
@@ -421,6 +423,132 @@ $("ej-form").addEventListener("submit", (e) => {
 $("ej-giveup").addEventListener("click", () => answerEn2JaSpelling(null));
 $("ej-play").addEventListener("click", () => speakWord(currentWord().en));
 $("ej-slow").addEventListener("click", () => speakWord(currentWord().en, true));
+
+// ---------------------------------------------------------------
+// アプリの中のキーボード
+// 端末のキーボードは画面の半分をふさぎ、予測変換も出るので、答えはこれで書く。
+// 使っているあいだは答えの欄を読み取り専用にして、端末のキーボードを出さない。
+// ---------------------------------------------------------------
+const KB_ROWS = [
+  ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
+  ["a", "s", "d", "f", "g", "h", "j", "k", "l"],
+  ["z", "x", "c", "v", "b", "n", "m", "back"],
+  ["'", "-", "space"],
+];
+const ANSWER_INPUTS = ["je-input", "ej-input"];
+
+const keyboard = buildKeyboard();
+
+function buildKeyboard() {
+  const kb = document.createElement("div");
+  kb.className = "kb";
+  for (const row of KB_ROWS) {
+    const r = document.createElement("div");
+    r.className = "kb-row";
+    for (const key of row) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "kb-key";
+      b.dataset.key = key;
+      if (key === "back") {
+        b.textContent = "⌫";
+        b.classList.add("kb-back");
+        b.setAttribute("aria-label", "1文字けす");
+      } else if (key === "space") {
+        b.textContent = "space";
+        b.classList.add("kb-space");
+      } else {
+        b.textContent = key;
+      }
+      r.appendChild(b);
+    }
+    kb.appendChild(r);
+  }
+  // ⌫ は押しつづけると続けて消える
+  let repeat = null;
+  const stop = () => {
+    clearTimeout(repeat);
+    clearInterval(repeat);
+    repeat = null;
+  };
+  kb.addEventListener("pointerdown", (e) => {
+    const b = e.target.closest(".kb-key");
+    if (!b) return;
+    e.preventDefault();
+    b.classList.add("is-down");
+    pressKey(b.dataset.key);
+    if (b.dataset.key === "back") {
+      repeat = setTimeout(() => (repeat = setInterval(() => pressKey("back"), 80)), 450);
+    }
+  });
+  for (const ev of ["pointerup", "pointercancel", "pointerleave"]) {
+    kb.addEventListener(ev, () => {
+      stop();
+      for (const b of kb.querySelectorAll(".is-down")) b.classList.remove("is-down");
+    });
+  }
+  return kb;
+}
+
+function activeAnswerInput() {
+  if (!session) return null;
+  if (session.mode === "ja2en" && !$("je-form").hidden) return $("je-input");
+  if (session.mode === "en2ja" && !$("ej-form").hidden) return $("ej-input");
+  return null;
+}
+
+function pressKey(key) {
+  const input = activeAnswerInput();
+  if (!input) return;
+  if (key === "back") input.value = input.value.slice(0, -1);
+  else if (key === "space") input.value += input.value && !input.value.endsWith(" ") ? " " : "";
+  else input.value += key;
+  input.dispatchEvent(new Event("input"));
+}
+
+// 出題中のフォームの中にキーボードを入れる
+function attachKeyboard(formId) {
+  applyKeyboardMode();
+  $(formId).querySelector(".kb-slot").appendChild(keyboard);
+}
+
+function applyKeyboardMode() {
+  const app = db.settings.appKeyboard;
+  keyboard.hidden = !app;
+  for (const id of ANSWER_INPUTS) {
+    const input = $(id);
+    input.readOnly = app;
+    // アプリのキーボードのときは端末のキーボードを出さない。
+    // 端末のキーボードのときは英字のキーボード（メール用）を出して、日本語の変換や予測変換を出さない
+    input.inputMode = app ? "none" : "email";
+    input.classList.toggle("is-appkb", app);
+  }
+}
+
+// 端末のキーボードを使うときだけ、答えの欄にカーソルを置いてキーボードを出す
+function focusAnswer(id) {
+  if (!db.settings.appKeyboard) $(id).focus();
+}
+
+// パソコンのキーボードでも打てるようにする（答えの欄は読み取り専用なので、ここで受ける）
+document.addEventListener("keydown", (e) => {
+  if (!db.settings.appKeyboard || e.ctrlKey || e.metaKey || e.altKey) return;
+  const input = activeAnswerInput();
+  if (!input) return;
+  if (e.key === "Enter") {
+    e.preventDefault();
+    input.form.requestSubmit();
+  } else if (e.key === "Backspace") {
+    e.preventDefault();
+    pressKey("back");
+  } else if (e.key === " ") {
+    e.preventDefault();
+    pressKey("space");
+  } else if (/^[a-zA-Z'\-]$/.test(e.key)) {
+    e.preventDefault();
+    pressKey(e.key.toLowerCase());
+  }
+});
 
 // ---------------------------------------------------------------
 for (const b of document.querySelectorAll(".btn-mode")) {
@@ -573,6 +701,7 @@ $("edit-delete").addEventListener("click", () => {
 function renderSettings() {
   const s = db.settings;
   $("goal-new").textContent = s.newPerDay;
+  $("set-appkb").checked = s.appKeyboard;
   $("set-autospeak").checked = s.autoSpeak;
   $("set-rate").value = s.rate;
   $("set-rate-label").textContent = s.rate.toFixed(1);
@@ -642,6 +771,12 @@ $("reset-progress").addEventListener("click", () => {
   db.log = {};
   saveDB();
   alert("学習の記録を消しました。");
+});
+
+$("set-appkb").addEventListener("change", (e) => {
+  db.settings.appKeyboard = e.target.checked;
+  saveDB();
+  applyKeyboardMode();
 });
 
 $("set-autospeak").addEventListener("change", (e) => {

@@ -113,11 +113,12 @@
                    autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done"
                    placeholder="ここに英語を入力">
             <p class="input-warn" id="je-warn" hidden>日本語が入っています。キーボードを英語（ABC）に切りかえてね</p>
-            <div class="btn-row">
+            <div class="kb-slot"></div>
+            <div class="btn-row btn-row-3">
+              <button type="button" class="btn btn-ghost btn-big" id="je-giveup">わからない</button>
               <button type="button" class="btn btn-big" id="je-hint-btn">ヒント</button>
               <button type="submit" class="btn btn-primary btn-big">答え合わせ</button>
             </div>
-            <button type="button" class="btn btn-ghost btn-big" id="je-giveup">わからない</button>
           </form>
           <div class="feedback" id="je-feedback" hidden></div>
         </div>
@@ -141,6 +142,7 @@
                    autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done"
                    placeholder="聞こえた英語を入力">
             <p class="input-warn" id="ej-warn" hidden>日本語が入っています。キーボードを英語（ABC）に切りかえてね</p>
+            <div class="kb-slot"></div>
             <div class="btn-row">
               <button type="button" class="btn btn-ghost btn-big" id="ej-giveup">わからない</button>
               <button type="submit" class="btn btn-primary btn-big">答え合わせ</button>
@@ -251,6 +253,15 @@
           </div>
         </div>
         <p class="note">これに加えて、その日に復習する単語（まちがえた単語や、前に覚えた単語）が出ます。</p>
+      </div>
+
+      <div class="panel">
+        <h2 class="panel-title">答えの入力</h2>
+        <label class="switch-row">
+          <span>アプリのキーボードを使う</span>
+          <input type="checkbox" id="set-appkb" class="switch">
+        </label>
+        <p class="note">オフにすると、スマホのキーボードで入力します。</p>
       </div>
 
       <div class="panel">

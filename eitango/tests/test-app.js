@@ -29,6 +29,10 @@ function check(name, ok, detail) {
   await p.evaluate(() => localStorage.clear());
   await p.reload();
   const en = () => p.evaluate(() => currentWord().en);
+  // アプリのキーボードのキーを1つずつ押して書く
+  async function tapKeys(text) {
+    for (const c of text) await p.click(`.kb-key[data-key="${c === " " ? "space" : c}"]`);
+  }
 
   // --- 採点 ---
   const grading = await p.evaluate(() => [
@@ -171,16 +175,34 @@ function check(name, ok, detail) {
   const weak = await p.evaluate(() => session.queue.map((id) => db.words.find((w) => w.id === id).en));
   check("苦手だけ = 知らなかった2語", weak.length === 2 && weak.includes("apple"), weak.join(","));
   const target = await en();
-  check("答えの欄は英字キーボード", (await p.getAttribute("#je-input", "inputmode")) === "email");
+  check("アプリのキーボードを出す", await p.isVisible("#je-form .kb"));
+  check("端末のキーボードは出さない",
+    (await p.evaluate(() => $("je-input").readOnly)) && (await p.getAttribute("#je-input", "inputmode")) === "none");
+  await tapKeys("ab c");
+  await p.click('.kb-key[data-key="back"]');
+  check("キーで書いて⌫で消せる", (await p.inputValue("#je-input")) === "ab ");
+  await p.click('.kb-key[data-key="space"]');
+  check("空白は続けて入らない", (await p.inputValue("#je-input")) === "ab ");
+  await p.keyboard.press("Backspace");
+  await p.keyboard.type("Xy");
+  check("パソコンのキーボードでも書ける", (await p.inputValue("#je-input")) === "abxy");
+  for (let i = 0; i < 4; i++) await p.click('.kb-key[data-key="back"]');
+
+  // 端末のキーボードにしたとき
+  await p.evaluate(() => { db.settings.appKeyboard = false; applyKeyboardMode(); });
+  check("設定で端末のキーボード（英字）にできる",
+    (await p.isHidden("#je-form .kb")) && (await p.getAttribute("#je-input", "inputmode")) === "email");
   await p.fill("#je-input", "あっぷる");
   await p.press("#je-input", "Enter");
   check("かなは採点せずに知らせる", (await p.isVisible("#je-warn")) && (await p.isHidden("#je-feedback")));
-  await p.fill("#je-input", "x");
+  await p.fill("#je-input", "");
   check("入力し直すと注意が消える", await p.isHidden("#je-warn"));
+  await p.evaluate(() => { db.settings.appKeyboard = true; applyKeyboardMode(); });
+
   await p.click("#je-hint-btn");
   check("ヒント", (await p.textContent("#je-hint")) === (await p.evaluate((e) => hintFor(e), target)));
-  await p.fill("#je-input", target + "x");
-  await p.press("#je-input", "Enter");
+  await tapKeys(target + "x");
+  await p.keyboard.press("Enter");
   check("つづりちがいは不正解", (await p.textContent("#je-feedback .fb-mark")).includes("ざんねん"));
   await p.click('#je-feedback [data-act="override"]');
   check("正解にする", (await p.textContent("#je-feedback .fb-mark")).includes("正解"));
@@ -193,8 +215,9 @@ function check(name, ok, detail) {
   await p.click('[data-mode="en2ja"]');
   check("英語はかくしてある", await p.isHidden("#ej-en"));
   let word = await en();
-  await p.fill("#ej-input", word);
-  await p.press("#ej-input", "Enter");
+  check("英→日もアプリのキーボード", await p.isVisible("#ej-form .kb"));
+  await tapKeys(word);
+  await p.click('#ej-form button[type="submit"]');
   check("つづり正解", (await p.textContent("#ej-spell")).includes("正解"));
   check("4択", (await p.locator(".choice").count()) === 4);
   await p.click('.choice:not([data-correct="1"])');

@@ -291,6 +291,41 @@ textarea.input { resize: vertical; }
 
 .quiz-side { margin-top: 14px; display: grid; gap: 12px; }
 .quiz-form { display: grid; gap: 10px; }
+.btn-row.btn-row-3 { grid-template-columns: 1fr 1fr 1.4fr; }
+.btn-row-3 .btn { padding: 12px 4px; font-size: 1.05rem; white-space: nowrap; }
+
+/* アプリの中のキーボード */
+.input-answer.is-appkb { caret-color: transparent; cursor: default; }
+.kb {
+  display: grid;
+  gap: 7px;
+  padding: 8px 4px;
+  background: #dbe2ee;
+  border-radius: 14px;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+.kb-row { display: flex; justify-content: center; gap: 5px; }
+.kb-key {
+  flex: 0 1 calc((100% - 45px) / 10);
+  min-width: 0;
+  height: 48px;
+  border: none;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 0 #a9b4c6;
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: var(--ink);
+  padding: 0;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.kb-key.is-down { background: #b9c6dc; }
+.kb-back { flex-basis: calc((100% - 45px) / 10 * 1.9); background: #c3cddd; font-size: 1.2rem; }
+.kb-space { flex-basis: 60%; font-size: 1rem; color: var(--sub); }
+
 .input-warn { margin: 0; color: var(--bad); font-weight: 700; text-align: center; }
 .input-answer { font-size: 1.4rem; min-height: 60px; text-align: center; }
 
@@ -469,7 +504,8 @@ textarea.input { resize: vertical; }
   .home-modes { grid-area: modes; }
   .home-week { grid-area: week; }
   /* 書く問題は入力とボタンを右側にまとめる */
-  #mode-ja2en, #mode-en2ja { grid-template-columns: 1fr 380px; align-items: start; }
+  #mode-ja2en, #mode-en2ja { grid-template-columns: 1fr 460px; align-items: start; }
+  .kb-key { height: 54px; }
   .quiz-card { min-height: 50vh; justify-content: center; }
   .quiz-side { margin-top: 0; }
   .answer-buttons {
@@ -484,4 +520,19 @@ textarea.input { resize: vertical; }
 @media (orientation: landscape) and (max-height: 500px) {
   .flashcard { min-height: 60vh; padding-top: 16px; }
   .fc-en { font-size: 2rem; }
+}
+
+/* 背の低いスマホ（iPhone SE など）は、キーボードとボタンまで1画面に収まるよう詰める */
+@media (orientation: portrait) and (max-height: 740px) {
+  .main { padding-top: 10px; }
+  .study-head { margin-bottom: 8px; }
+  .quiz-card { padding: 34px 16px 12px; gap: 6px; }
+  .quiz-card .badge { top: 10px; left: 12px; }
+  .btn-speak-big { width: 64px; height: 64px; font-size: 1.8rem; }
+  .quiz-side { margin-top: 10px; gap: 8px; }
+  .quiz-form { gap: 8px; }
+  .input-answer { min-height: 50px; }
+  .kb { gap: 6px; padding: 6px 3px; }
+  .kb-key { height: 44px; }
+  .quiz-form .btn-big { min-height: 54px; }
 }
