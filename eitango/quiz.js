@@ -63,19 +63,26 @@ function hintFor(en) {
 }
 
 // 訳を意味ごとに分ける。「大切な、重要な」→ 大切な / 重要な。
-// （数えられる）のようなかっこの中の補足、～、空白は除いてくらべる。
+// （数えられる）のようなかっこの中は補足（note）として分けておき、～ と空白は除く。
 function meaningParts(ja) {
   return ja
-    .replace(/[（(][^）)]*[）)]/g, "")
-    .split(/[、,，/／;；・]/)
-    .map((s) => s.replace(/[～~〜\s]/g, ""))
-    .filter(Boolean);
+    .split(/[、,，/／;；・](?![^（(]*[）)])/)
+    .map((s) => ({
+      core: s.replace(/[（(][^）)]*[）)]/g, "").replace(/[～~〜\s]/g, ""),
+      note: (s.match(/[（(]([^）)]*)[）)]/) || [])[1] || "",
+    }))
+    .filter((p) => p.core);
 }
 
-// 2つの訳に同じ意味が1つでもあれば true（「たくさんの」と「（数えられる）たくさんの」など）
+// 2つの訳に同じ意味が1つでもあれば true。
+// 補足がちがうものは別の意味とする（many「（数えられる）たくさんの」と
+// much「（数えられない）たくさんの」）。片方にしか補足がなければ同じ意味
+// （a lot of「たくさんの」は many とも much とも同じ）。
 function sameMeaning(a, b) {
-  const pa = new Set(meaningParts(a));
-  return meaningParts(b).some((p) => pa.has(p));
+  const pb = meaningParts(b);
+  return meaningParts(a).some((x) =>
+    pb.some((y) => x.core === y.core && (!x.note || !y.note || x.note === y.note))
+  );
 }
 
 // 書いた答えが、同じ意味で登録されている別の単語（a lot of に対する many など）なら、その単語

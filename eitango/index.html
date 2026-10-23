@@ -40,6 +40,13 @@
       </div>
 
       <div class="panel home-modes">
+        <p class="field-label field-label-top">学年</p>
+        <div class="seg seg-grade" id="grade-filter">
+          <button type="button" class="seg-btn is-on" data-grade="0">すべて</button>
+          <button type="button" class="seg-btn" data-grade="1">1年</button>
+          <button type="button" class="seg-btn" data-grade="2">2年</button>
+          <button type="button" class="seg-btn" data-grade="3">3年</button>
+        </div>
         <p class="field-label field-label-top">出題する単語</p>
         <div class="seg seg-scope" id="scope">
           <button type="button" class="seg-btn is-on" data-scope="today">今日の分</button>
@@ -177,6 +184,12 @@
           <button type="button" class="seg-btn" data-filter="idiom">熟語</button>
           <button type="button" class="seg-btn" data-filter="weak">苦手</button>
         </div>
+        <div class="seg" id="words-grade">
+          <button type="button" class="seg-btn is-on" data-grade="0">全学年</button>
+          <button type="button" class="seg-btn" data-grade="1">1年</button>
+          <button type="button" class="seg-btn" data-grade="2">2年</button>
+          <button type="button" class="seg-btn" data-grade="3">3年</button>
+        </div>
         <button type="button" class="btn btn-primary btn-big" id="words-add">＋ 追加する</button>
       </div>
       <p class="words-count" id="words-count"></p>
@@ -208,6 +221,16 @@
           </div>
         </div>
 
+        <div class="field">
+          <span class="field-label">学年</span>
+          <div class="seg" id="edit-grade">
+            <button type="button" class="seg-btn is-on" data-grade="0">なし</button>
+            <button type="button" class="seg-btn" data-grade="1">1年</button>
+            <button type="button" class="seg-btn" data-grade="2">2年</button>
+            <button type="button" class="seg-btn" data-grade="3">3年</button>
+          </div>
+        </div>
+
         <label class="field">
           <span class="field-label">例文（なくてもOK）</span>
           <textarea class="input" id="edit-example" rows="2" lang="en"
@@ -234,8 +257,8 @@
       <div class="panel">
         <h2 class="panel-title">CSVで一括登録・書き出し</h2>
         <p class="note">
-          列は <b>英語, 日本語訳, 種類, 例文, 例文の訳</b> の順です。種類は「単語」か「熟語」（空欄ならスペース入りを熟語とみなします）。
-          例文と例文の訳はなくてもかまいません。1行目が見出しでもそのまま読み込めます。
+          列は <b>英語, 日本語訳, 種類, 例文, 例文の訳, 学年</b> の順です。種類は「単語」か「熟語」（空欄ならスペース入りを熟語とみなします）。
+          例文・例文の訳・学年（1年／2年／3年）はなくてもかまいません。1行目が見出しでもそのまま読み込めます。
         </p>
         <p class="note">同じ英語がすでにあるときは、訳・種類・例文を上書きします（例文の欄が空なら元の例文を残します。覚えた記録も残ります）。</p>
         <div class="btn-row">
@@ -244,6 +267,18 @@
         </div>
         <input type="file" id="csv-file" accept=".csv,text/csv,text/plain" hidden>
         <p class="result-box" id="csv-result" hidden></p>
+      </div>
+
+      <div class="panel">
+        <h2 class="panel-title">学年別の単語セット</h2>
+        <p class="note">
+          中学校で習う基本の単語・熟語を、学年ごとに単語帳へ追加できます。
+          このアプリ用に作ったもので、例文と例文の訳つきです。
+          学年は文法を習う順番に合わせた目安なので、教科書とちがうときは単語の編集画面で直せます。
+        </p>
+        <p class="note">すでに同じ英語があるときは、自分で入れた訳や例文はそのままにします。</p>
+        <div class="pack-list" id="pack-list"></div>
+        <p class="result-box" id="pack-result" hidden></p>
       </div>
 
       <div class="panel">
@@ -319,6 +354,7 @@
 <script src="csv.js"></script>
 <script src="quiz.js"></script>
 <script src="srs.js"></script>
+<script src="wordbank.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

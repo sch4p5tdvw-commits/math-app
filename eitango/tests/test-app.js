@@ -344,6 +344,76 @@ function check(name, ok, detail) {
   const [dl5] = await Promise.all([p.waitForEvent("download"), p.click("#csv-export")]);
   check("書き出しにも例文の訳", fs.readFileSync(await dl5.path(), "utf8").includes("quiet,静かな,単語,Be quiet.,静かにしなさい。"));
 
+  // --- 学年 ---
+  await p.evaluate(() => localStorage.clear());
+  await p.reload();
+  check("サンプルにも学年", await p.evaluate(() => db.words.find((w) => w.en === "borrow").grade === 2));
+  await p.evaluate(() => { for (const w of db.words) delete w.grade; saveDB(); });
+  await p.reload();
+  check("前からある単語にも学年が入る", await p.evaluate(() =>
+    db.words.find((w) => w.en === "apple").grade === 1 && db.words.find((w) => w.en === "take care of").grade === 2));
+  check("many と much は別の意味", await p.evaluate(() =>
+    !sameMeaning("（数えられる）たくさんの", "（数えられない）たくさんの") && sameMeaning("（数えられる）たくさんの", "たくさんの")));
+
+  await p.click('.tab[data-view="settings"]');
+  const packBtn = (g) => p.locator(".pack-row").nth(g - 1).locator("button");
+  check("単語セットは学年ごと", (await p.locator(".pack-row").count()) === 3);
+  await packBtn(1).click();
+  const n1 = await p.evaluate(() => WORD_BANK[1].length);
+  check("1年の単語を追加", (await p.evaluate(() => db.words.length)) === 10 + n1 && (await p.textContent("#pack-result")).includes(`${n1}語 追加`));
+  check("追加ずみ", (await packBtn(1).textContent()).includes("追加ずみ") && (await packBtn(1).isDisabled()));
+  check("追加した単語に例文と訳", await p.evaluate(() => {
+    const w = db.words.find((x) => x.en === "be from");
+    return w.grade === 1 && w.type === "idiom" && w.exampleJa === "私は京都出身です。";
+  }));
+  // 自分で直した訳は、2年のセットを入れても上書きしない
+  await p.evaluate(() => { db.words.push(makeWord("visit", "おとずれる（自分の訳）", "word")); saveDB(); renderPacks(); });
+  await packBtn(2).click();
+  check("自分の訳はそのまま、学年はうめる", await p.evaluate(() => {
+    const w = db.words.find((x) => x.en === "visit");
+    return w.ja === "おとずれる（自分の訳）" && w.grade === 2 && w.example === "I visited Nara last summer.";
+  }));
+  check("すでにあった単語を知らせる", (await p.textContent("#pack-result")).includes("すでにあった 1語"));
+
+  await p.click('.tab[data-view="home"]');
+  await p.click('#grade-filter [data-grade="2"]');
+  check("学年の選択を覚える", await p.evaluate(() => db.settings.gradeFilter === 2));
+  check("今日の残りに学年", (await p.textContent("#today-line")).startsWith("2年"));
+  const q2 = await p.evaluate(() => { const { review, fresh } = todayQueue(); return [...review, ...fresh].map((w) => w.grade); });
+  check("2年の単語だけ出す", q2.length === 10 && q2.every((g) => g === 2), q2.join(","));
+  await p.click('[data-scope="all"]');
+  await p.click('[data-mode="cards"]');
+  check("全部も学年でしぼる", await p.evaluate(() => session.queue.every((id) => db.words.find((w) => w.id === id).grade === 2)));
+  await p.click("#study-quit");
+  dialogs.length = 0;
+  await p.click('#grade-filter [data-grade="3"]');
+  await p.click('[data-mode="cards"]');
+  check("単語がない学年は追加をすすめる", dialogs.length === 1 && dialogs[0].includes("学年別の単語セット"));
+  await p.click('#grade-filter [data-grade="0"]');
+  await p.click('[data-scope="today"]');
+
+  await p.click('.tab[data-view="words"]');
+  await p.click('#words-grade [data-grade="1"]');
+  check("単語帳を学年でしぼる", (await p.textContent("#words-count")) === `${7 + n1} 件`, await p.textContent("#words-count"));
+  check("学年を表示", (await p.locator(".grade-chip").first().textContent()) === "1年");
+  await p.click("#words-add");
+  check("追加は選んでいる学年で始まる", await p.evaluate(() => editGrade === 1));
+  await p.fill("#edit-en", "pencil");
+  await p.fill("#edit-ja", "えんぴつ");
+  await p.click('#edit-grade [data-grade="3"]');
+  await p.click('#edit-form button[type="submit"]');
+  check("学年を登録", await p.evaluate(() => db.words.find((w) => w.en === "pencil").grade === 3));
+  await p.click("#edit-cancel");
+
+  const csv6 = path.join(tmp, "six.csv");
+  fs.writeFileSync(csv6, "英語,日本語訳,種類,例文,例文の訳,学年\r\neraser,消しゴム,単語,,,中2\r\n");
+  await p.click('.tab[data-view="settings"]');
+  await p.setInputFiles("#csv-file", csv6);
+  await p.waitForTimeout(200);
+  check("CSVの6列目は学年", await p.evaluate(() => db.words.find((w) => w.en === "eraser").grade === 2));
+  const [dl6] = await Promise.all([p.waitForEvent("download"), p.click("#csv-export")]);
+  check("書き出しにも学年", fs.readFileSync(await dl6.path(), "utf8").includes("eraser,消しゴム,単語,,,2年"));
+
   // --- オフライン ---
   await p.goto(URL);
   await p.evaluate(() => navigator.serviceWorker.ready);

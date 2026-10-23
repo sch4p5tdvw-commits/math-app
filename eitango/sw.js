@@ -1,4 +1,4 @@
-const CACHE_NAME = "eitango-cache-v5";
+const CACHE_NAME = "eitango-cache-v6";
 const ASSETS = [
   "./",
   "./index.html",
@@ -11,6 +11,7 @@ const ASSETS = [
   "./csv.js",
   "./quiz.js",
   "./srs.js",
+  "./wordbank.js",
   "./app.js",
   "./manifest.json",
   "./icons/icon-192.png",
