@@ -139,10 +139,12 @@ function startSession(mode) {
   session = {
     mode,
     queue: ids,
-    total: ids.length,
-    done: 0,
+    words: ids.length, // はじめに出す単語の数
+    total: ids.length, // もう一度出す分を足した問題数
+    pos: 0, // 答えた問題数
     firstTry: 0,
     missed: new Set(), // 一度でもまちがえた・知らなかった単語
+    retried: new Set(), // もう一度出す分を足した単語
     pending: null, // 答え合わせのあと「次へ」を押すまでの結果
   };
   for (const m of Object.keys(MODES)) $("mode-" + m).hidden = m !== mode;
@@ -160,7 +162,8 @@ function nextItem() {
     finishSession();
     return;
   }
-  $("study-progress").textContent = `${session.done + 1} / ${session.total}`;
+  $("study-progress").textContent = `${session.pos + 1} / ${session.total}`;
+  $("study-retry").hidden = !session.missed.has(w.id);
   MODES[session.mode].show(w);
 }
 
@@ -169,12 +172,18 @@ function recordAnswer(correct) {
   const id = session.queue.shift();
   const w = db.words.find((x) => x.id === id);
   if (w) applyResult(w, correct, !correct && !session.missed.has(id));
+  session.pos++;
   if (correct) {
-    session.done++;
     if (!session.missed.has(id)) session.firstTry++;
   } else {
     session.missed.add(id);
-    session.queue.splice(Math.min(session.queue.length, 3), 0, id);
+    // もう一度出すのは1回だけ。最後の1枚で何度も同じカードが出て、先へ進めなくならないように。
+    // それでも覚えられなかった単語は今日の復習に残るので、「今日の分」でまた出る。
+    if (!session.retried.has(id)) {
+      session.retried.add(id);
+      session.queue.splice(Math.min(session.queue.length, 3), 0, id);
+      session.total++;
+    }
   }
   nextItem();
 }
@@ -183,11 +192,11 @@ function finishSession() {
   const s = session;
   session = null;
   const word = s.mode === "cards" ? "知ってた" : "1回で正解した";
-  $("done-summary").textContent = `${s.total}語のうち、${word}のは ${s.firstTry}語でした。`;
+  $("done-summary").textContent = `${s.words}語のうち、${word}のは ${s.firstTry}語でした。`;
   const missed = db.words.filter((w) => s.missed.has(w.id));
   $("done-missed").hidden = missed.length === 0;
   $("done-missed-list").innerHTML = missed
-    .map((w) => `<li><b lang="en">${escapeHtml(w.en)}</b>　${escapeHtml(w.ja)}</li>`)
+    .map((w) => `<li><b lang="en">${escapeHtml(displayEn(w.en))}</b>　${escapeHtml(w.ja)}</li>`)
     .join("");
   show("done");
 }
@@ -203,7 +212,7 @@ function renderFeedback(el, ok, w, opts = {}) {
     <p class="fb-mark ${ok ? "is-ok" : "is-ng"}">${ok ? "⭕ 正解！" : "❌ ざんねん"}</p>
     <div class="fb-word">
       <div>
-        <p class="fb-en" lang="en">${escapeHtml(w.en)}</p>
+        <p class="fb-en" lang="en">${escapeHtml(displayEn(w.en))}</p>
         <p class="fb-ja">${escapeHtml(w.ja)}</p>
       </div>
       <button type="button" class="btn-speak btn-speak-small" data-act="speak" aria-label="読み上げ">🔊</button>
@@ -231,7 +240,7 @@ function renderFeedback(el, ok, w, opts = {}) {
 // ---------------------------------------------------------------
 function showCard(w) {
   setTypeBadge($("fc-type"), w);
-  $("fc-en").textContent = w.en;
+  $("fc-en").textContent = displayEn(w.en);
   $("fc-ja").textContent = w.ja;
 
   // 熟語は使い方がわかるよう、表のときから例文を見せる
@@ -281,9 +290,11 @@ function showJa2En(w) {
   $("je-ja").textContent = w.ja;
   $("je-hint").hidden = true;
   $("je-input").value = "";
+  $("je-warn").hidden = true;
+  attachKeyboard("je-form");
   $("je-form").hidden = false;
   $("je-feedback").hidden = true;
-  $("je-input").focus();
+  focusAnswer("je-input");
 }
 
 function answerJa2En(given) {
@@ -298,9 +309,30 @@ function answerJa2En(given) {
   renderFeedback($("je-feedback"), ok, w, { yours: ok ? "" : given, canOverride: !ok && !!given });
 }
 
+// かなや漢字が入っていたら、キーボードが日本語のままなので採点せずに知らせる
+// （「be動詞」の漢字は答えの一部として書いてよい）
+function hasJapanese(s) {
+  return /[\u3040-\u30ff\u3400-\u9fff]/.test(s.replace(/be\s*動詞/gi, ""));
+}
+
+function readAnswer(inputId, warnId) {
+  const v = $(inputId).value.trim();
+  if (!v) return null;
+  if (hasJapanese(v)) {
+    $(warnId).hidden = false;
+    focusAnswer(inputId);
+    return null;
+  }
+  return v;
+}
+
+for (const [inputId, warnId] of [["je-input", "je-warn"], ["ej-input", "ej-warn"]]) {
+  $(inputId).addEventListener("input", () => ($(warnId).hidden = true));
+}
+
 $("je-form").addEventListener("submit", (e) => {
   e.preventDefault();
-  const v = $("je-input").value.trim();
+  const v = readAnswer("je-input", "je-warn");
   if (v) answerJa2En(v);
 });
 $("je-giveup").addEventListener("click", () => answerJa2En(null));
@@ -308,7 +340,7 @@ $("je-hint-btn").addEventListener("click", () => {
   const w = currentWord();
   $("je-hint").textContent = hintFor(w.en);
   $("je-hint").hidden = false;
-  $("je-input").focus();
+  focusAnswer("je-input");
 });
 
 // ---------------------------------------------------------------
@@ -322,12 +354,14 @@ function showEn2Ja(w) {
   $("ej-en").hidden = true;
   $("ej-example").hidden = true;
   $("ej-input").value = "";
+  $("ej-warn").hidden = true;
+  attachKeyboard("ej-form");
   $("ej-form").hidden = false;
   $("ej-spell").hidden = true;
   $("ej-choices").hidden = true;
   $("ej-feedback").hidden = true;
   speakWord(w.en);
-  $("ej-input").focus();
+  focusAnswer("ej-input");
 }
 
 function answerEn2JaSpelling(given) {
@@ -338,7 +372,7 @@ function answerEn2JaSpelling(given) {
   $("ej-form").hidden = true;
 
   // つづりの答え合わせ。ここで英語を見せてから、意味を選ぶ
-  $("ej-en").textContent = w.en;
+  $("ej-en").textContent = displayEn(w.en);
   $("ej-en").hidden = false;
   if (w.example) {
     $("ej-example").textContent = w.example;
@@ -383,12 +417,138 @@ function answerEn2JaMeaning(btn) {
 
 $("ej-form").addEventListener("submit", (e) => {
   e.preventDefault();
-  const v = $("ej-input").value.trim();
+  const v = readAnswer("ej-input", "ej-warn");
   if (v) answerEn2JaSpelling(v);
 });
 $("ej-giveup").addEventListener("click", () => answerEn2JaSpelling(null));
 $("ej-play").addEventListener("click", () => speakWord(currentWord().en));
 $("ej-slow").addEventListener("click", () => speakWord(currentWord().en, true));
+
+// ---------------------------------------------------------------
+// アプリの中のキーボード
+// 端末のキーボードは画面の半分をふさぎ、予測変換も出るので、答えはこれで書く。
+// 使っているあいだは答えの欄を読み取り専用にして、端末のキーボードを出さない。
+// ---------------------------------------------------------------
+const KB_ROWS = [
+  ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
+  ["a", "s", "d", "f", "g", "h", "j", "k", "l"],
+  ["z", "x", "c", "v", "b", "n", "m", "back"],
+  ["'", "-", "space"],
+];
+const ANSWER_INPUTS = ["je-input", "ej-input"];
+
+const keyboard = buildKeyboard();
+
+function buildKeyboard() {
+  const kb = document.createElement("div");
+  kb.className = "kb";
+  for (const row of KB_ROWS) {
+    const r = document.createElement("div");
+    r.className = "kb-row";
+    for (const key of row) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "kb-key";
+      b.dataset.key = key;
+      if (key === "back") {
+        b.textContent = "⌫";
+        b.classList.add("kb-back");
+        b.setAttribute("aria-label", "1文字けす");
+      } else if (key === "space") {
+        b.textContent = "space";
+        b.classList.add("kb-space");
+      } else {
+        b.textContent = key;
+      }
+      r.appendChild(b);
+    }
+    kb.appendChild(r);
+  }
+  // ⌫ は押しつづけると続けて消える
+  let repeat = null;
+  const stop = () => {
+    clearTimeout(repeat);
+    clearInterval(repeat);
+    repeat = null;
+  };
+  kb.addEventListener("pointerdown", (e) => {
+    const b = e.target.closest(".kb-key");
+    if (!b) return;
+    e.preventDefault();
+    b.classList.add("is-down");
+    pressKey(b.dataset.key);
+    if (b.dataset.key === "back") {
+      repeat = setTimeout(() => (repeat = setInterval(() => pressKey("back"), 80)), 450);
+    }
+  });
+  for (const ev of ["pointerup", "pointercancel", "pointerleave"]) {
+    kb.addEventListener(ev, () => {
+      stop();
+      for (const b of kb.querySelectorAll(".is-down")) b.classList.remove("is-down");
+    });
+  }
+  return kb;
+}
+
+function activeAnswerInput() {
+  if (!session) return null;
+  if (session.mode === "ja2en" && !$("je-form").hidden) return $("je-input");
+  if (session.mode === "en2ja" && !$("ej-form").hidden) return $("ej-input");
+  return null;
+}
+
+function pressKey(key) {
+  const input = activeAnswerInput();
+  if (!input) return;
+  if (key === "back") input.value = input.value.slice(0, -1);
+  else if (key === "space") input.value += input.value && !input.value.endsWith(" ") ? " " : "";
+  else input.value += key;
+  input.dispatchEvent(new Event("input"));
+}
+
+// 出題中のフォームの中にキーボードを入れる
+function attachKeyboard(formId) {
+  applyKeyboardMode();
+  $(formId).querySelector(".kb-slot").appendChild(keyboard);
+}
+
+function applyKeyboardMode() {
+  const app = db.settings.appKeyboard;
+  keyboard.hidden = !app;
+  for (const id of ANSWER_INPUTS) {
+    const input = $(id);
+    input.readOnly = app;
+    // アプリのキーボードのときは端末のキーボードを出さない。
+    // 端末のキーボードのときは英字のキーボード（メール用）を出して、日本語の変換や予測変換を出さない
+    input.inputMode = app ? "none" : "email";
+    input.classList.toggle("is-appkb", app);
+  }
+}
+
+// 端末のキーボードを使うときだけ、答えの欄にカーソルを置いてキーボードを出す
+function focusAnswer(id) {
+  if (!db.settings.appKeyboard) $(id).focus();
+}
+
+// パソコンのキーボードでも打てるようにする（答えの欄は読み取り専用なので、ここで受ける）
+document.addEventListener("keydown", (e) => {
+  if (!db.settings.appKeyboard || e.ctrlKey || e.metaKey || e.altKey) return;
+  const input = activeAnswerInput();
+  if (!input) return;
+  if (e.key === "Enter") {
+    e.preventDefault();
+    input.form.requestSubmit();
+  } else if (e.key === "Backspace") {
+    e.preventDefault();
+    pressKey("back");
+  } else if (e.key === " ") {
+    e.preventDefault();
+    pressKey("space");
+  } else if (/^[a-zA-Z'\-]$/.test(e.key)) {
+    e.preventDefault();
+    pressKey(e.key.toLowerCase());
+  }
+});
 
 // ---------------------------------------------------------------
 for (const b of document.querySelectorAll(".btn-mode")) {
@@ -409,7 +569,7 @@ function renderWords() {
   const q = $("words-search").value.trim().toLowerCase();
   const list = db.words
     .filter((w) => wordsFilter === "all" || (wordsFilter === "weak" ? isWeak(w) : w.type === wordsFilter))
-    .filter((w) => !q || w.en.toLowerCase().includes(q) || w.ja.includes(q))
+    .filter((w) => !q || normEn(w.en).includes(normEn(q)) || w.ja.includes(q))
     .sort((a, b) => b.createdAt - a.createdAt);
 
   $("words-count").textContent = `${list.length} 件`;
@@ -427,7 +587,7 @@ function renderWords() {
       </button>
       <button type="button" class="btn-speak btn-speak-small" aria-label="読み上げ">🔊</button>`;
     li.querySelector(".badge").textContent = TYPE_LABEL[w.type];
-    li.querySelector(".word-en").textContent = w.en;
+    li.querySelector(".word-en").textContent = displayEn(w.en);
     li.querySelector(".word-ja").textContent = w.ja;
     const st = wordStatus(w);
     li.querySelector(".word-status").textContent = st.text;
@@ -475,7 +635,7 @@ function openEdit(id) {
   editingId = id;
   const w = id ? db.words.find((x) => x.id === id) : null;
   $("edit-title").textContent = w ? "単語を編集" : "単語を追加";
-  $("edit-en").value = w ? w.en : "";
+  $("edit-en").value = w ? displayEn(w.en) : "";
   $("edit-ja").value = w ? w.ja : "";
   $("edit-example").value = w ? w.example : "";
   setEditType(w ? w.type : "word");
@@ -496,14 +656,14 @@ $("edit-en").addEventListener("input", () => {
 
 $("edit-form").addEventListener("submit", (e) => {
   e.preventDefault();
-  const en = $("edit-en").value.trim();
+  const en = storeEn($("edit-en").value);
   const ja = $("edit-ja").value.trim();
   const example = $("edit-example").value.trim();
   if (!en || !ja) return;
 
   const dup = findWordByEn(en, editingId);
   if (dup) {
-    $("edit-warn").textContent = `「${dup.en}」はもう登録されています（${dup.ja}）。`;
+    $("edit-warn").textContent = `「${displayEn(dup.en)}」はもう登録されています（${dup.ja}）。`;
     $("edit-warn").classList.remove("is-ok");
     $("edit-warn").hidden = false;
     return;
@@ -519,7 +679,7 @@ $("edit-form").addEventListener("submit", (e) => {
     saveDB();
     // 続けて登録しやすいよう、追加のあとは空のフォームのまま残る
     openEdit(null);
-    $("edit-warn").textContent = `「${en}」を追加しました。続けて入力できます。`;
+    $("edit-warn").textContent = `「${displayEn(en)}」を追加しました。続けて入力できます。`;
     $("edit-warn").hidden = false;
     $("edit-warn").classList.add("is-ok");
     return;
@@ -529,7 +689,7 @@ $("edit-form").addEventListener("submit", (e) => {
 $("edit-cancel").addEventListener("click", () => show("words"));
 $("edit-delete").addEventListener("click", () => {
   const w = db.words.find((x) => x.id === editingId);
-  if (!w || !confirm(`「${w.en}」を削除しますか？`)) return;
+  if (!w || !confirm(`「${displayEn(w.en)}」を削除しますか？`)) return;
   db.words = db.words.filter((x) => x.id !== editingId);
   saveDB();
   show("words");
@@ -541,6 +701,7 @@ $("edit-delete").addEventListener("click", () => {
 function renderSettings() {
   const s = db.settings;
   $("goal-new").textContent = s.newPerDay;
+  $("set-appkb").checked = s.appKeyboard;
   $("set-autospeak").checked = s.autoSpeak;
   $("set-rate").value = s.rate;
   $("set-rate-label").textContent = s.rate.toFixed(1);
@@ -610,6 +771,12 @@ $("reset-progress").addEventListener("click", () => {
   db.log = {};
   saveDB();
   alert("学習の記録を消しました。");
+});
+
+$("set-appkb").addEventListener("change", (e) => {
+  db.settings.appKeyboard = e.target.checked;
+  saveDB();
+  applyKeyboardMode();
 });
 
 $("set-autospeak").addEventListener("change", (e) => {

@@ -7,6 +7,7 @@ const DEFAULT_SETTINGS = {
   rate: 0.9, // 読み上げの速さ
   voiceURI: "", // 空なら端末のアメリカ英語の声を選ぶ
   newPerDay: 10, // 1日に新しく覚える数
+  appKeyboard: true, // 答えはアプリの中のキーボードで書く（端末のキーボードを出さない）
 };
 
 // 動作確認用の自作サンプル。市販の単語帳からは取っていない。
@@ -38,7 +39,7 @@ function newId() {
 function makeWord(en, ja, type, example) {
   return {
     id: newId(),
-    en: en.trim(),
+    en: storeEn(en),
     ja: ja.trim(),
     type: type === "idiom" ? "idiom" : "word",
     example: (example || "").trim(),
@@ -83,9 +84,23 @@ function saveDB() {
   }
 }
 
+// 熟語の頭の be は be動詞（am / is / are …）のこと。
+// 保存と読み上げは "be good at" のまま、画面では "be動詞 good at" と書く。
+// "(be) afraid of" や "a / b" の2つめの頭の be も同じ。
+const BE_VERB_RE = /(^|\/\s*)(\(?)be(\)?)(?=\s)/gi;
+
+function displayEn(en) {
+  return en.replace(BE_VERB_RE, "$1$2be動詞$3");
+}
+
+// 入力や CSV に「be動詞」と書かれていたら be にもどして保存する
+function storeEn(s) {
+  return s.replace(/be\s*動詞/gi, "be").trim();
+}
+
 // 英語の見出しをくらべるときの形。大文字小文字や空白の差は同じものとみなす。
 function normEn(s) {
-  return s.trim().toLowerCase().replace(/\s+/g, " ");
+  return storeEn(s).toLowerCase().replace(/\s+/g, " ");
 }
 
 function findWordByEn(en, exceptId) {
