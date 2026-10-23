@@ -5,6 +5,13 @@ function speakWord(text, slow) {
   Speech.speak(text, { rate, voiceURI: db.settings.voiceURI });
 }
 
+// 効果音のあとに英語を読み上げる（音が重ならないように少し待つ）
+let speakTimer = null;
+function speakAfterSfx(text, played) {
+  clearTimeout(speakTimer);
+  speakTimer = setTimeout(() => speakWord(text), played ? Sfx.LENGTH * 1000 : 0);
+}
+
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 }
@@ -22,7 +29,10 @@ function show(view) {
   for (const t of document.querySelectorAll(".tab")) {
     t.classList.toggle("is-on", t.dataset.view === view);
   }
-  if (view !== "study") Speech.stop();
+  if (view !== "study") {
+    clearTimeout(speakTimer);
+    Speech.stop();
+  }
   if (view === "home") renderHome();
   if (view === "words") renderWords();
   if (view === "settings") renderSettings();
@@ -162,6 +172,7 @@ function nextItem() {
     finishSession();
     return;
   }
+  clearTimeout(speakTimer);
   $("study-progress").textContent = `${session.pos + 1} / ${session.total}`;
   $("study-retry").hidden = !session.missed.has(w.id);
   MODES[session.mode].show(w);
@@ -206,6 +217,33 @@ function setTypeBadge(el, w) {
   el.className = "badge badge-" + w.type;
 }
 
+// 例文。タップすると読み上げて、訳があれば見せる
+function exampleHtml(w) {
+  if (!w.example) return "";
+  const tap = w.exampleJa ? "🔊 タップで音声と訳" : "🔊 タップで音声";
+  return `
+    <button type="button" class="example">
+      <span class="ex-en" lang="en">${escapeHtml(w.example)}</span>
+      <span class="ex-tap">${tap}</span>
+      ${w.exampleJa ? `<span class="ex-ja" hidden>${escapeHtml(w.exampleJa)}</span>` : ""}
+    </button>`;
+}
+
+document.addEventListener("click", (e) => {
+  const ex = e.target.closest(".example");
+  if (!ex) return;
+  speakWord(ex.querySelector(".ex-en").textContent);
+  const ja = ex.querySelector(".ex-ja");
+  if (ja) {
+    ja.hidden = false;
+    ex.querySelector(".ex-tap").textContent = "🔊 もう一度聞く";
+  }
+});
+
+function playResult(ok) {
+  return Sfx.play(ok ? "correct" : "wrong");
+}
+
 // 答え合わせのあとに出す、正解・訳・例文と「次へ」
 function renderFeedback(el, ok, w, opts = {}) {
   el.innerHTML = `
@@ -217,7 +255,7 @@ function renderFeedback(el, ok, w, opts = {}) {
       </div>
       <button type="button" class="btn-speak btn-speak-small" data-act="speak" aria-label="読み上げ">🔊</button>
     </div>
-    ${w.example ? `<p class="fc-example" lang="en">${escapeHtml(w.example)}</p>` : ""}
+    ${exampleHtml(w)}
     ${opts.yours ? `<p class="fb-yours">あなたの答え：<span lang="en">${escapeHtml(opts.yours)}</span></p>` : ""}
     <button type="button" class="btn btn-primary btn-big" data-act="next">次へ</button>
     ${opts.canOverride ? `<button type="button" class="btn btn-ghost" data-act="override">今のは合ってた（正解にする）</button>` : ""}`;
@@ -228,6 +266,7 @@ function renderFeedback(el, ok, w, opts = {}) {
   if (ov) {
     ov.addEventListener("click", () => {
       session.pending = true;
+      playResult(true);
       renderFeedback(el, true, w);
     });
   }
@@ -243,12 +282,8 @@ function showCard(w) {
   $("fc-en").textContent = displayEn(w.en);
   $("fc-ja").textContent = w.ja;
 
-  // 熟語は使い方がわかるよう、表のときから例文を見せる
-  const front = $("fc-example-front");
-  const back = $("fc-example-back");
-  front.textContent = back.textContent = w.example;
-  front.hidden = !(w.example && w.type === "idiom");
-  back.hidden = !(w.example && w.type === "word");
+  // 例文から意味がわかってしまうので、例文は訳といっしょに裏に出す
+  $("fc-example-back").innerHTML = exampleHtml(w);
 
   $("fc-back").hidden = true;
   $("fc-hint").hidden = false;
@@ -266,7 +301,7 @@ function flipCard() {
 }
 
 $("flashcard").addEventListener("click", (e) => {
-  if (e.target.closest(".btn-speak")) return;
+  if (e.target.closest(".btn-speak, .example")) return;
   flipCard();
 });
 $("flashcard").addEventListener("keydown", (e) => {
@@ -291,6 +326,7 @@ function showJa2En(w) {
   $("je-hint").hidden = true;
   $("je-input").value = "";
   $("je-warn").hidden = true;
+  $("je-alt").hidden = true;
   attachKeyboard("je-form");
   $("je-form").hidden = false;
   $("je-feedback").hidden = true;
@@ -300,11 +336,23 @@ function showJa2En(w) {
 function answerJa2En(given) {
   const w = currentWord();
   const ok = given !== null && isCorrectAnswer(given, w.en);
+
+  // 同じ意味の別の単語（a lot of に対する many など）を書いたときは、まちがいにせず書き直してもらう
+  const syn = !ok && given !== null ? synonymAnswer(given, w, db.words) : null;
+  if (syn) {
+    $("je-alt").textContent = `「${displayEn(syn.en)}」も同じ意味で合っています。でも今回は別の言い方を答えてね`;
+    $("je-alt").hidden = false;
+    $("je-input").value = "";
+    focusAnswer("je-input");
+    return;
+  }
+
   session.pending = ok;
   $("je-input").blur();
   $("je-form").hidden = true;
   $("je-hint").hidden = true;
-  speakWord(w.en);
+  $("je-alt").hidden = true;
+  speakAfterSfx(w.en, playResult(ok));
   // 書いたけれど合わなかったときだけ「正解にする」を出す（別の言い方で書いた場合など）
   renderFeedback($("je-feedback"), ok, w, { yours: ok ? "" : given, canOverride: !ok && !!given });
 }
@@ -352,7 +400,6 @@ function showEn2Ja(w) {
   $("ej-ask").textContent = "聞こえた英語を書こう";
   $("ej-listen").hidden = false;
   $("ej-en").hidden = true;
-  $("ej-example").hidden = true;
   $("ej-input").value = "";
   $("ej-warn").hidden = true;
   attachKeyboard("ej-form");
@@ -374,10 +421,7 @@ function answerEn2JaSpelling(given) {
   // つづりの答え合わせ。ここで英語を見せてから、意味を選ぶ
   $("ej-en").textContent = displayEn(w.en);
   $("ej-en").hidden = false;
-  if (w.example) {
-    $("ej-example").textContent = w.example;
-    $("ej-example").hidden = false;
-  }
+  speakAfterSfx(w.en, playResult(ok));
   const spell = $("ej-spell");
   spell.className = "spell-result " + (ok ? "is-ok" : "is-ng");
   spell.innerHTML = ok
@@ -412,6 +456,7 @@ function answerEn2JaMeaning(btn) {
   if (!meaningOk) btn.classList.add("is-wrong");
   // つづりと意味の両方が合って正解
   session.pending = session.spellOk && meaningOk;
+  playResult(session.pending);
   renderFeedback($("ej-feedback"), session.pending, w);
 }
 
@@ -638,6 +683,7 @@ function openEdit(id) {
   $("edit-en").value = w ? displayEn(w.en) : "";
   $("edit-ja").value = w ? w.ja : "";
   $("edit-example").value = w ? w.example : "";
+  $("edit-example-ja").value = w ? w.exampleJa || "" : "";
   setEditType(w ? w.type : "word");
   $("edit-delete").hidden = !w;
   $("edit-warn").hidden = true;
@@ -659,6 +705,7 @@ $("edit-form").addEventListener("submit", (e) => {
   const en = storeEn($("edit-en").value);
   const ja = $("edit-ja").value.trim();
   const example = $("edit-example").value.trim();
+  const exampleJa = $("edit-example-ja").value.trim();
   if (!en || !ja) return;
 
   const dup = findWordByEn(en, editingId);
@@ -671,11 +718,11 @@ $("edit-form").addEventListener("submit", (e) => {
 
   if (editingId) {
     const w = db.words.find((x) => x.id === editingId);
-    Object.assign(w, { en, ja, type: editType, example });
+    Object.assign(w, { en, ja, type: editType, example, exampleJa });
     saveDB();
     show("words");
   } else {
-    db.words.push(makeWord(en, ja, editType, example));
+    db.words.push(makeWord(en, ja, editType, example, exampleJa));
     saveDB();
     // 続けて登録しやすいよう、追加のあとは空のフォームのまま残る
     openEdit(null);
@@ -702,6 +749,7 @@ function renderSettings() {
   const s = db.settings;
   $("goal-new").textContent = s.newPerDay;
   $("set-appkb").checked = s.appKeyboard;
+  $("set-sfx").checked = s.sfx;
   $("set-autospeak").checked = s.autoSpeak;
   $("set-rate").value = s.rate;
   $("set-rate-label").textContent = s.rate.toFixed(1);
@@ -771,6 +819,12 @@ $("reset-progress").addEventListener("click", () => {
   db.log = {};
   saveDB();
   alert("学習の記録を消しました。");
+});
+
+$("set-sfx").addEventListener("change", (e) => {
+  db.settings.sfx = e.target.checked;
+  saveDB();
+  if (db.settings.sfx) Sfx.play("correct");
 });
 
 $("set-appkb").addEventListener("change", (e) => {

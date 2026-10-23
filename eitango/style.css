@@ -252,12 +252,6 @@ textarea.input { resize: vertical; }
   flex-direction: column;
   gap: 10px;
 }
-.fc-example {
-  margin: 0;
-  color: var(--sub);
-  font-size: 1.1rem;
-  line-height: 1.5;
-}
 .fc-hint { margin: 0; color: var(--sub); font-size: 0.95rem; }
 
 .answer-buttons {
@@ -325,6 +319,34 @@ textarea.input { resize: vertical; }
 .kb-key.is-down { background: #b9c6dc; }
 .kb-back { flex-basis: calc((100% - 45px) / 10 * 1.9); background: #c3cddd; font-size: 1.2rem; }
 .kb-space { flex-basis: 60%; font-size: 1rem; color: var(--sub); }
+
+.input-alt {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fff7e0;
+  color: #7a5a00;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* 例文（タップで読み上げ・訳） */
+.example {
+  width: 100%;
+  border: 2px dashed var(--line);
+  background: #f8fafd;
+  border-radius: 12px;
+  padding: 10px 12px;
+  text-align: left;
+  display: grid;
+  gap: 4px;
+  -webkit-tap-highlight-color: transparent;
+}
+.example:active { background: #eef3fb; }
+.ex-en { font-size: 1.1rem; line-height: 1.5; color: var(--ink); }
+.ex-tap { font-size: 0.8rem; color: var(--primary); font-weight: 700; }
+.ex-ja { font-size: 1rem; color: var(--primary-dark); font-weight: 700; line-height: 1.5; }
 
 .input-warn { margin: 0; color: var(--bad); font-weight: 700; text-align: center; }
 .input-answer { font-size: 1.4rem; min-height: 60px; text-align: center; }

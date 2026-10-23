@@ -62,17 +62,37 @@ function hintFor(en) {
     .join("　 ");
 }
 
+// 訳を意味ごとに分ける。「大切な、重要な」→ 大切な / 重要な。
+// （数えられる）のようなかっこの中の補足、～、空白は除いてくらべる。
+function meaningParts(ja) {
+  return ja
+    .replace(/[（(][^）)]*[）)]/g, "")
+    .split(/[、,，/／;；・]/)
+    .map((s) => s.replace(/[～~〜\s]/g, ""))
+    .filter(Boolean);
+}
+
+// 2つの訳に同じ意味が1つでもあれば true（「たくさんの」と「（数えられる）たくさんの」など）
+function sameMeaning(a, b) {
+  const pa = new Set(meaningParts(a));
+  return meaningParts(b).some((p) => pa.has(p));
+}
+
+// 書いた答えが、同じ意味で登録されている別の単語（a lot of に対する many など）なら、その単語
+function synonymAnswer(input, word, allWords) {
+  return allWords.find((w) => w.id !== word.id && sameMeaning(w.ja, word.ja) && isCorrectAnswer(input, w.en)) || null;
+}
+
 // 正解 1 つ + まぎらわしい訳 3 つ。同じ種類（単語なら単語）から先に選ぶ。
+// 正解と同じ意味の訳や、おたがいに同じ意味の訳は選択肢に入れない（正解が2つになるので）。
 function makeChoices(word, allWords, n = 4) {
   const others = allWords.filter((w) => w.id !== word.id);
   const sameType = shuffle(others.filter((w) => w.type === word.type));
   const otherType = shuffle(others.filter((w) => w.type !== word.type));
   const picked = [];
-  const seen = new Set([word.ja]);
   for (const w of [...sameType, ...otherType]) {
     if (picked.length >= n - 1) break;
-    if (seen.has(w.ja)) continue;
-    seen.add(w.ja);
+    if ([word, ...picked].some((p) => sameMeaning(p.ja, w.ja))) continue;
     picked.push(w);
   }
   return shuffle([word, ...picked]);

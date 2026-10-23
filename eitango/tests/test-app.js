@@ -249,6 +249,101 @@ function check(name, ok, detail) {
   await p.click("#goal-plus");
   check("目標を変える", await p.evaluate(() => db.settings.newPerDay === 11));
 
+  // --- 効果音・同じ意味の単語・例文 ---
+  await p.evaluate(() => localStorage.clear());
+  await p.reload();
+  // 前の版で保存したサンプル（例文の訳がない）を開いたとき
+  await p.evaluate(() => { for (const w of db.words) delete w.exampleJa; saveDB(); });
+  await p.reload();
+  check("前からあるサンプルにも例文の訳が入る",
+    await p.evaluate(() => db.words.find((w) => w.en === "a lot of").exampleJa === "私の部屋にはたくさんの本があります。"));
+  await p.evaluate(() => {
+    window.__sfx = [];
+    const play = Sfx.play.bind(Sfx);
+    Sfx.play = (k) => { window.__sfx.push(k); return play(k); };
+    db.words.push(makeWord("many", "（数えられる）たくさんの", "word", "I have many friends.", "私には友だちがたくさんいます。"));
+    saveDB();
+  });
+  const startWith = (mode, en) => p.evaluate(([mode, en]) => {
+    scope = "all";
+    startSession(mode);
+    session.queue = [db.words.find((w) => w.en === en).id];
+    session.total = session.words = 1;
+    nextItem();
+  }, [mode, en]);
+  const sfx = () => p.evaluate(() => window.__sfx.splice(0).join(","));
+
+  await startWith("ja2en", "a lot of");
+  await tapKeys("many");
+  await p.keyboard.press("Enter");
+  check("同じ意味の別の単語は書き直し", (await p.isVisible("#je-alt")) && (await p.isHidden("#je-feedback"))
+    && (await p.textContent("#je-alt")).includes("many"));
+  check("書き直しのときは音を鳴らさない", (await sfx()) === "");
+  await tapKeys("a lot of");
+  await p.keyboard.press("Enter");
+  check("正解でピンポン", (await sfx()) === "correct");
+  check("答え合わせのあとに例文", await p.isVisible("#je-feedback .example"));
+  check("例文の訳ははじめ隠す", await p.isHidden("#je-feedback .ex-ja"));
+  await p.click("#je-feedback .example");
+  check("例文をタップすると訳", (await p.isVisible("#je-feedback .ex-ja"))
+    && (await p.textContent("#je-feedback .ex-ja")) === "私の部屋にはたくさんの本があります。");
+  await p.click('#je-feedback [data-act="next"]');
+  await p.click("#done-home");
+
+  await startWith("ja2en", "apple");
+  await tapKeys("aple");
+  await p.keyboard.press("Enter");
+  check("不正解でブブー", (await sfx()) === "wrong");
+  await p.click('#je-feedback [data-act="override"]');
+  check("正解にするとピンポン", (await sfx()) === "correct");
+  await p.click("#study-quit");
+
+  await startWith("cards", "look for");
+  check("カードの表に例文を出さない", await p.isHidden("#flashcard .example"));
+  await p.click("#flashcard", { position: { x: 30, y: 60 } });
+  check("カードの裏に例文", await p.isVisible("#flashcard .example"));
+  await p.click("#flashcard .example");
+  check("裏の例文をタップしてもカードはそのまま", (await p.isVisible("#flashcard .ex-ja")) && (await p.isVisible("#answer-buttons")));
+  await p.click("#study-quit");
+
+  await startWith("en2ja", "a lot of");
+  await tapKeys("a lot of");
+  await p.click('#ej-form button[type="submit"]');
+  check("つづり正解でピンポン", (await sfx()) === "correct");
+  check("意味を選ぶ前に例文を出さない", (await p.locator("#mode-en2ja .example:visible").count()) === 0);
+  const choicesOk = await p.evaluate(() => {
+    const w = db.words.find((x) => x.en === "a lot of");
+    for (let i = 0; i < 50; i++) if (makeChoices(w, db.words).some((c) => c.en === "many")) return false;
+    return true;
+  });
+  check("同じ意味の訳は4択に入れない", choicesOk);
+  await p.click('.choice:not([data-correct="1"])');
+  check("意味をまちがえるとブブー", (await sfx()) === "wrong");
+  check("答え合わせのあとに例文（英→日）", await p.isVisible("#ej-feedback .example"));
+  await p.click("#study-quit");
+
+  await p.click('.tab[data-view="settings"]');
+  await p.click("#set-sfx");
+  check("効果音を消せる", await p.evaluate(() => db.settings.sfx === false && Sfx.play("correct") === false));
+
+  await p.click('.tab[data-view="words"]');
+  await p.click("#words-add");
+  await p.fill("#edit-en", "visit");
+  await p.fill("#edit-ja", "訪れる");
+  await p.fill("#edit-example", "I visited Kyoto.");
+  await p.fill("#edit-example-ja", "私は京都を訪れました。");
+  await p.click('#edit-form button[type="submit"]');
+  check("例文の訳を登録", await p.evaluate(() => db.words.find((w) => w.en === "visit").exampleJa === "私は京都を訪れました。"));
+  const csv5 = path.join(tmp, "five.csv");
+  fs.writeFileSync(csv5, "英語,日本語訳,種類,例文,例文の訳\r\nquiet,静かな,単語,Be quiet.,静かにしなさい。\r\n");
+  await p.click("#edit-cancel");
+  await p.click('.tab[data-view="settings"]');
+  await p.setInputFiles("#csv-file", csv5);
+  await p.waitForTimeout(200);
+  check("CSVの5列目は例文の訳", await p.evaluate(() => db.words.find((w) => w.en === "quiet").exampleJa === "静かにしなさい。"));
+  const [dl5] = await Promise.all([p.waitForEvent("download"), p.click("#csv-export")]);
+  check("書き出しにも例文の訳", fs.readFileSync(await dl5.path(), "utf8").includes("quiet,静かな,単語,Be quiet.,静かにしなさい。"));
+
   // --- オフライン ---
   await p.goto(URL);
   await p.evaluate(() => navigator.serviceWorker.ready);

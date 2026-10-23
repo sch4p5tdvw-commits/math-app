@@ -1,6 +1,6 @@
-// CSV の読み書き。列は「英語, 日本語訳, 種類, 例文」の順。
+// CSV の読み書き。列は「英語, 日本語訳, 種類, 例文, 例文の訳」の順。
 // Windows の Excel でそのまま開けるよう、書き出しは BOM つき UTF-8・CRLF にする。
-const CSV_HEADER = ["英語", "日本語訳", "種類", "例文"];
+const CSV_HEADER = ["英語", "日本語訳", "種類", "例文", "例文の訳"];
 
 function parseCSV(text) {
   const rows = [];
@@ -94,13 +94,20 @@ function importCSVText(text) {
     }
     const type = parseType(r[2], en);
     const example = (r[3] || "").trim();
+    const exampleJa = (r[4] || "").trim();
     const found = findWordByEn(en, null);
     if (found) {
-      // 例文の欄が空なら、登録ずみの例文は消さずに残す
-      Object.assign(found, { en, ja, type, example: example || found.example });
+      // 例文・例文の訳の欄が空なら、登録ずみのものは消さずに残す
+      Object.assign(found, {
+        en,
+        ja,
+        type,
+        example: example || found.example,
+        exampleJa: exampleJa || found.exampleJa || "",
+      });
       result.updated++;
     } else {
-      db.words.push(makeWord(en, ja, type, example));
+      db.words.push(makeWord(en, ja, type, example, exampleJa));
       result.added++;
     }
   });
@@ -111,7 +118,7 @@ function importCSVText(text) {
 function exportCSVText() {
   const rows = [CSV_HEADER];
   const words = db.words.slice().sort((a, b) => a.createdAt - b.createdAt);
-  for (const w of words) rows.push([w.en, w.ja, TYPE_LABEL[w.type], w.example]);
+  for (const w of words) rows.push([w.en, w.ja, TYPE_LABEL[w.type], w.example, w.exampleJa || ""]);
   return "﻿" + toCSV(rows);
 }
 

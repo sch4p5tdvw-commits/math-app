@@ -84,10 +84,9 @@
           <span class="badge" id="fc-type">単語</span>
           <p class="fc-en" id="fc-en" lang="en"></p>
           <button type="button" class="btn-speak" id="fc-speak" aria-label="もう一度聞く">🔊</button>
-          <p class="fc-example fc-example-front" id="fc-example-front" lang="en" hidden></p>
           <div class="fc-back" id="fc-back" hidden>
             <p class="fc-ja" id="fc-ja"></p>
-            <p class="fc-example" id="fc-example-back" lang="en" hidden></p>
+            <div id="fc-example-back"></div>
           </div>
           <p class="fc-hint" id="fc-hint">タップして訳を見る</p>
         </div>
@@ -113,6 +112,7 @@
                    autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done"
                    placeholder="ここに英語を入力">
             <p class="input-warn" id="je-warn" hidden>日本語が入っています。キーボードを英語（ABC）に切りかえてね</p>
+            <p class="input-alt" id="je-alt" hidden></p>
             <div class="kb-slot"></div>
             <div class="btn-row btn-row-3">
               <button type="button" class="btn btn-ghost btn-big" id="je-giveup">わからない</button>
@@ -134,7 +134,6 @@
             <button type="button" class="btn btn-ghost" id="ej-slow">🐢 ゆっくり</button>
           </div>
           <p class="quiz-en" id="ej-en" lang="en" hidden></p>
-          <p class="fc-example" id="ej-example" lang="en" hidden></p>
         </div>
         <div class="quiz-side">
           <form class="quiz-form" id="ej-form" autocomplete="off">
@@ -215,6 +214,11 @@
                     autocapitalize="sentences" spellcheck="false" placeholder="例）I am looking for my key."></textarea>
         </label>
 
+        <label class="field">
+          <span class="field-label">例文の訳（なくてもOK）</span>
+          <textarea class="input" id="edit-example-ja" rows="2" placeholder="例）私は鍵を探しています。"></textarea>
+        </label>
+
         <p class="form-warn" id="edit-warn" hidden></p>
 
         <div class="form-buttons">
@@ -230,8 +234,8 @@
       <div class="panel">
         <h2 class="panel-title">CSVで一括登録・書き出し</h2>
         <p class="note">
-          列は <b>英語, 日本語訳, 種類, 例文</b> の順です。種類は「単語」か「熟語」（空欄ならスペース入りを熟語とみなします）。
-          例文はなくてもかまいません。1行目が見出しでもそのまま読み込めます。
+          列は <b>英語, 日本語訳, 種類, 例文, 例文の訳</b> の順です。種類は「単語」か「熟語」（空欄ならスペース入りを熟語とみなします）。
+          例文と例文の訳はなくてもかまいません。1行目が見出しでもそのまま読み込めます。
         </p>
         <p class="note">同じ英語がすでにあるときは、訳・種類・例文を上書きします（例文の欄が空なら元の例文を残します。覚えた記録も残ります）。</p>
         <div class="btn-row">
@@ -267,6 +271,10 @@
       <div class="panel">
         <h2 class="panel-title">音声</h2>
         <p class="form-warn" id="speech-unsupported" hidden>このブラウザは読み上げに対応していません。</p>
+        <label class="switch-row">
+          <span>正解・不正解の音（ピンポン・ブブー）</span>
+          <input type="checkbox" id="set-sfx" class="switch">
+        </label>
         <label class="switch-row">
           <span>カードを出したら自動で読み上げる</span>
           <input type="checkbox" id="set-autospeak" class="switch">
@@ -307,6 +315,7 @@
 
 <script src="store.js"></script>
 <script src="speech.js"></script>
+<script src="sound.js"></script>
 <script src="csv.js"></script>
 <script src="quiz.js"></script>
 <script src="srs.js"></script>
