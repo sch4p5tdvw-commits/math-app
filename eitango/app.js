@@ -263,7 +263,8 @@ function playResult(ok) {
 // 答え合わせのあとに出す、正解・訳・例文と「次へ」
 function renderFeedback(el, ok, w, opts = {}) {
   el.innerHTML = `
-    <p class="fb-mark ${ok ? "is-ok" : "is-ng"}">${ok ? "⭕ 正解！" : "❌ ざんねん"}</p>
+    <p class="fb-mark ${ok ? "is-ok" : "is-ng"}">${opts.mark || (ok ? "⭕ 正解！" : "❌ ざんねん")}</p>
+    ${opts.note ? `<p class="fb-note">${escapeHtml(opts.note)}</p>` : ""}
     <div class="fb-word">
       <div>
         <p class="fb-en" lang="en">${escapeHtml(displayEn(w.en))}</p>
@@ -470,10 +471,15 @@ function answerEn2JaMeaning(btn) {
     if (b.dataset.correct) b.classList.add("is-correct");
   }
   if (!meaningOk) btn.classList.add("is-wrong");
-  // つづりと意味の両方が合って正解
+  // 4択の答え合わせは意味だけで決める。ただし記録は、つづりと意味の両方が合って正解
+  // （つづりをまちがえた単語は苦手として復習に入れる）
   session.pending = session.spellOk && meaningOk;
-  playResult(session.pending);
-  renderFeedback($("ej-feedback"), session.pending, w);
+  playResult(meaningOk);
+  const spellMissed = meaningOk && !session.spellOk;
+  renderFeedback($("ej-feedback"), meaningOk, w, {
+    mark: spellMissed ? "⭕ 意味は正解！" : "",
+    note: spellMissed ? "つづりをまちがえたので、この単語は復習に入ります" : "",
+  });
 }
 
 $("ej-form").addEventListener("submit", (e) => {

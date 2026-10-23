@@ -386,6 +386,7 @@ textarea.input { resize: vertical; }
 .fb-word { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .fb-en { margin: 0; font-size: 1.5rem; font-weight: 800; word-break: break-word; }
 .fb-ja { margin: 2px 0 0; font-size: 1.15rem; color: var(--primary-dark); font-weight: 700; }
+.fb-note { margin: 0; text-align: center; color: #7a5a00; font-weight: 700; font-size: 0.95rem; }
 .fb-yours { margin: 0; color: var(--sub); }
 
 .done-missed { text-align: left; margin: 0 0 20px; }

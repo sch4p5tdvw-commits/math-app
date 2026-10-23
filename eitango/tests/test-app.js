@@ -226,7 +226,9 @@ function check(name, ok, detail) {
   await p.click("#ej-giveup");
   check("わからない → 英語を見せる", await p.isVisible("#ej-en"));
   await p.click('.choice[data-correct="1"]');
-  check("つづりをあきらめると不正解", (await p.textContent("#ej-feedback .fb-mark")).includes("ざんねん"));
+  check("4択は意味が合えば正解と表示", (await p.textContent("#ej-feedback .fb-mark")).includes("意味は正解")
+    && (await p.isVisible("#ej-feedback .fb-note")));
+  check("つづりをあきらめた単語は記録では不正解", await p.evaluate(() => session.pending === false));
   await p.click("#study-quit");
 
   // --- 翌日：まちがえた単語が先頭 ---
@@ -298,6 +300,16 @@ function check(name, ok, detail) {
   check("正解にするとピンポン", (await sfx()) === "correct");
   await p.click("#study-quit");
 
+  await startWith("en2ja", "apple");
+  await tapKeys("aple");
+  await p.click('#ej-form button[type="submit"]');
+  check("つづりをまちがえるとブブー", (await sfx()) === "wrong");
+  await p.click('.choice[data-correct="1"]');
+  check("つづりをまちがえても意味が合えばピンポン", (await sfx()) === "correct");
+  await p.click('#ej-feedback [data-act="next"]');
+  check("つづりをまちがえた単語は苦手に入る", await p.evaluate(() => isWeak(db.words.find((w) => w.en === "apple"))));
+  await p.click("#study-quit");
+
   await startWith("cards", "look for");
   check("カードの表に例文を出さない", await p.isHidden("#flashcard .example"));
   await p.click("#flashcard", { position: { x: 30, y: 60 } });
@@ -319,6 +331,8 @@ function check(name, ok, detail) {
   check("同じ意味の訳は4択に入れない", choicesOk);
   await p.click('.choice:not([data-correct="1"])');
   check("意味をまちがえるとブブー", (await sfx()) === "wrong");
+  check("つづりが合って意味をまちがえると不正解", (await p.textContent("#ej-feedback .fb-mark")).includes("ざんねん")
+    && (await p.isHidden("#ej-feedback .fb-note")));
   check("答え合わせのあとに例文（英→日）", await p.isVisible("#ej-feedback .example"));
   await p.click("#study-quit");
 
