@@ -367,6 +367,51 @@ function check(name, ok, detail) {
   const [dl5] = await Promise.all([p.waitForEvent("download"), p.click("#csv-export")]);
   check("書き出しにも例文の訳", fs.readFileSync(await dl5.path(), "utf8").includes("quiet,静かな,単語,Be quiet.,静かにしなさい。"));
 
+  // --- 今日やった単語 ---
+  await p.evaluate(() => localStorage.clear());
+  await p.reload();
+  dialogs.length = 0;
+  await p.click('[data-scope="done"]');
+  await p.click('[data-mode="ja2en"]');
+  check("今日やった単語がないと知らせる", dialogs.length === 1 && dialogs[0].includes("まだ答えた単語がありません"));
+  await p.click('[data-scope="today"]');
+  await p.click('[data-mode="cards"]');
+  for (let i = 0; i < 30 && (await p.isVisible("#view-study")); i++) {
+    await p.click("#flashcard", { position: { x: 30, y: 60 } });
+    await p.click((await en()) === "apple" ? "#ans-unknown" : "#ans-known");
+  }
+  await p.click("#done-home");
+  check("カードのあとは今日の分が空", (await p.textContent("#today-line")).includes("復習 1語 ＋ 新しい単語 0語"),
+    await p.textContent("#today-line"));
+  check("今日やった単語の数", (await p.textContent("#scope-done-n")) === "（10）");
+  await p.click('[data-scope="done"]');
+  await p.click('[data-mode="ja2en"]');
+  check("今日やった単語を書く問題で出す", await p.evaluate(() => session.queue.length === 10));
+  check("知らなかった単語から出す", (await en()) === "apple");
+  await tapKeys("apple");
+  await p.keyboard.press("Enter");
+  await p.click('#je-feedback [data-act="next"]');
+  check("今日が復習日の単語は正解で進む", await p.evaluate(() => db.words.find((w) => w.en === "apple").level === 1));
+  const known = await en();
+  const before = await p.evaluate((e) => JSON.stringify(db.words.find((w) => w.en === e)), known);
+  await tapKeys(known);
+  await p.keyboard.press("Enter");
+  await p.click('#je-feedback [data-act="next"]');
+  check("知ってるの単語は正解しても次の日は変わらない", await p.evaluate(([e, b]) => {
+    const w = db.words.find((x) => x.en === e), o = JSON.parse(b);
+    return w.level === o.level && w.due === o.due;
+  }, [known, before]));
+  const missed = await en();
+  await tapKeys("zz");
+  await p.keyboard.press("Enter");
+  await p.click('#je-feedback [data-act="next"]');
+  check("書けなかった単語は最初から・苦手に", await p.evaluate((e) => {
+    const w = db.words.find((x) => x.en === e);
+    return w.level === 0 && w.due === todayStr() && isWeak(w);
+  }, missed));
+  check("今日の学習数は重ねて数えない", await p.evaluate(() => db.log[todayStr()].count === 10));
+  await p.click("#study-quit");
+
   // --- 学年 ---
   await p.evaluate(() => localStorage.clear());
   await p.reload();

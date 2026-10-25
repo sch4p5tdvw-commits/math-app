@@ -87,6 +87,16 @@ function weakQueue() {
   );
 }
 
+// 今日答えた単語（カードめくりでも書く問題でも）。カードで見た単語を書いて確かめる用。
+// まちがえた・知らなかった単語から。予定より早い正解ではレベルが上がらないので、
+// ここで正解しても次に出る日は変わらない。
+function doneTodayQueue() {
+  const today = todayStr();
+  return shuffle(db.words.filter((w) => inGrade(w) && w.lastDay === today)).sort(
+    (a, b) => (a.level || 0) - (b.level || 0)
+  );
+}
+
 // 続けて学習した日数。今日まだ学習していなければ、昨日までの日数を数える。
 function streakDays() {
   let day = todayStr();
