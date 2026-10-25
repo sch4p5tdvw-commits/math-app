@@ -165,7 +165,8 @@ textarea.input { resize: vertical; }
 .week-day.is-today .week-label { color: var(--primary); }
 .today-line { margin: 0; font-size: 1.1rem; font-weight: 700; }
 .today-line b { font-size: 1.4rem; color: var(--primary); }
-.seg-scope { margin: 0; }
+/* 4つ並ぶと狭いので 2×2 にする */
+.seg-scope { margin: 0; display: grid; grid-template-columns: 1fr 1fr; }
 .scope-note { margin: 10px 2px 14px; font-size: 0.9rem; }
 .home-line b { color: var(--ink); font-size: 1.3rem; }
 

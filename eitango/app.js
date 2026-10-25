@@ -48,6 +48,7 @@ let scope = "today";
 
 const SCOPE_NOTE = {
   today: "まちがえた・知らなかった単語を先に、復習 → 新しい単語の順に出します。",
+  done: "今日答えた単語をもう一度出します。カードで見た単語を書いて確かめよう（正解しても次に出る日は変わりません）。",
   weak: "まちがえたことがあって、まだ覚えきっていない単語だけを出します。",
   all: "登録した単語をぜんぶ、ばらばらの順で出します。",
 };
@@ -85,6 +86,8 @@ function renderHome() {
   for (const b of $("grade-filter").querySelectorAll(".seg-btn")) b.classList.toggle("is-on", Number(b.dataset.grade) === g);
   const weakN = db.words.filter((w) => inGrade(w) && isWeak(w)).length;
   $("scope-weak-n").textContent = weakN ? `（${weakN}）` : "";
+  const doneN = doneTodayQueue().length;
+  $("scope-done-n").textContent = doneN ? `（${doneN}）` : "";
   for (const b of $("scope").querySelectorAll(".seg-btn")) b.classList.toggle("is-on", b.dataset.scope === scope);
   $("scope-note").textContent = SCOPE_NOTE[scope];
 }
@@ -132,12 +135,14 @@ function buildQueue() {
     const { review, fresh } = todayQueue();
     return [...review, ...fresh];
   }
+  if (scope === "done") return doneTodayQueue();
   if (scope === "weak") return weakQueue();
   return shuffle(db.words.filter(inGrade));
 }
 
 const EMPTY_SCOPE_MSG = {
   today: "今日の分はもうおわっています。「苦手だけ」か「全部」で練習できます。",
+  done: "今日はまだ答えた単語がありません。先に「今日の分」をやってみよう。",
   weak: "苦手な単語はありません。",
   all: "単語帳に単語がありません。先に「単語帳」から追加してください。",
 };
