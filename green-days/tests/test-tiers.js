@@ -31,10 +31,15 @@ const ONELINE = `鹿沼店
   // ---- 1. 画面から値段ちがいをまとめて登録 ----
   await p.click('.tab-btn[data-screen="stock"]');
   await p.click('#btn-new-product'); await p.waitForTimeout(200);
-  check('追加のときは値段ちがい欄が出る', await p.isVisible('#product-tiers-field'), true);
+  check('追加のときは値段を足せる', await p.isVisible('#btn-add-price'), true);
   await p.fill('#product-name', 'カボチャ');
   await p.fill('#product-price', '330');
-  await p.fill('#product-tiers', '330, 280, 230, 180');
+  // 「＋ 値段ちがいを追加」で欄を増やす。区切り文字は要らない
+  for (const v of ['280', '230', '180']) {
+    await p.click('#btn-add-price');
+    await p.locator('#product-price-rows input').last().fill(v);
+  }
+  check('値段の欄が4つ', await p.locator('#product-price-rows input').count(), 4);
   await p.click('#product-form button[type="submit"]'); await p.waitForTimeout(500);
 
   const made = await p.evaluate(() => db.products.filter(x => x.name.includes('カボチャ'))
@@ -45,7 +50,8 @@ const ONELINE = `鹿沼店
 
   // 編集で開いたときは出ないこと
   await p.click('#product-list .list-item'); await p.waitForTimeout(300);
-  check('編集のときは値段ちがい欄を出さない', await p.isHidden('#product-tiers-field'), true);
+  check('編集のときは値段を足せない', await p.isHidden('#btn-add-price'), true);
+  check('編集では値段の欄はひとつ', await p.locator('#product-price-rows input').count(), 1);
   await p.click('#btn-product-cancel'); await p.waitForTimeout(200);
 
   // ---- 2. 税込のお知らせが、税抜の段に正しく入るか ----
@@ -90,6 +96,24 @@ const ONELINE = `鹿沼店
     document.querySelectorAll('#shipment-product-list button')).map(b => b.textContent.trim()));
   console.log('\n出荷で選べる商品:', shipList.join(' | '));
   check('段ごとに出荷先が選べる', shipList.filter(x => x.includes('カボチャ')).length, 4);
+
+  // ---- 4.5 あとから1段だけ足せるか ----
+  await p.click('.tab-btn[data-screen="stock"]');
+  await p.click('#btn-new-product'); await p.waitForTimeout(200);
+  await p.fill('#product-name', 'カボチャ');
+  await p.fill('#product-price', '400');
+  await p.click('#product-form button[type="submit"]'); await p.waitForTimeout(500);
+  const later = await p.evaluate(() => db.products.filter(x => x.name.includes('カボチャ')).map(x => x.name));
+  check('1つだけでも段として足される', later.includes('カボチャ（400円）'), true);
+  check('ただの「カボチャ」は作られない', later.includes('カボチャ'), false);
+
+  // 段をつけていない品目は、今までどおり1つの商品のまま
+  await p.click('#btn-new-product'); await p.waitForTimeout(200);
+  await p.fill('#product-name', 'オクラ');
+  await p.fill('#product-price', '162');
+  await p.click('#product-form button[type="submit"]'); await p.waitForTimeout(500);
+  check('段をつけない品目はそのまま',
+    await p.evaluate(() => db.products.some(x => x.name === 'オクラ')), true);
 
   // ---- 5. 集計も段ごとに分かれるか ----
   await p.click('.tab-btn[data-screen="report"]');

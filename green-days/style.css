@@ -413,6 +413,23 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--green-500);
 .stock-row input { width: 92px; flex-shrink: 0; padding: 8px 10px; }
 .stock-rows-empty { font-size: 12.5px; color: var(--ink-soft); }
 
+/* 値段ちがいの入力欄。数字キーボードのままで足せるよう、区切り文字は使わない */
+.price-rows { display: flex; flex-direction: column; gap: 8px; }
+.price-row { display: flex; align-items: center; gap: 8px; }
+.price-row input { flex: 1; min-width: 0; }
+.price-row-del {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--red);
+  font-size: 15px;
+  font-weight: 700;
+}
+#btn-add-price { margin-top: 8px; align-self: flex-start; }
+
 .name-entry { display: flex; gap: 8px; margin-top: 10px; }
 .name-entry input { flex: 1; min-width: 0; }
 .name-entry .btn { flex-shrink: 0; }

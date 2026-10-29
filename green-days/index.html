@@ -271,19 +271,22 @@
               「、」か「,」で区切ってください。
             </small>
           </label>
-          <label class="field">
+          <div class="field">
             <span>販売価格（円）</span>
-            <input type="number" id="product-price" min="0" step="1" required>
-          </label>
-          <label class="field" id="product-tiers-field">
-            <span>値段ちがいをまとめて登録（任意）</span>
-            <input type="text" id="product-tiers" maxlength="80" placeholder="例：330, 280, 230, 180">
-            <small class="field-hint">
-              同じ品目を値段ごとに分けて台帳をつけたいときに使います。ここに値段を並べると、
+            <div id="product-price-rows" class="price-rows">
+              <div class="price-row">
+                <input type="number" id="product-price" min="0" step="1" required>
+              </div>
+            </div>
+            <button type="button" id="btn-add-price" class="btn btn-secondary btn-compact">
+              ＋ 値段ちがいを追加
+            </button>
+            <small class="field-hint" id="product-price-hint">
+              同じ品目を値段ごとに分けて台帳をつけたいときは、値段を足してください。
               「カボチャ（330円）」のように1つずつ商品ができます。
               取込のときは、文章の金額にいちばん近い値段のものが選ばれます。
             </small>
-          </label>
+          </div>
           <div class="field">
             <span>店舗ごとの在庫数</span>
             <div id="product-stock-rows" class="stock-rows"></div>
