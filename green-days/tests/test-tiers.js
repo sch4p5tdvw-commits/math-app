@@ -115,6 +115,32 @@ const ONELINE = `鹿沼店
   check('段をつけない品目はそのまま',
     await p.evaluate(() => db.products.some(x => x.name === 'オクラ')), true);
 
+  // ---- 4.7 値段のついていない「カボチャ」が残っていても段に入るか ----
+  // 取込で先に自動登録されると、こういう商品ができる
+  await p.evaluate(() => {
+    db.products.push({ id: 'stray', name: 'カボチャ', category: '', aliases: [],
+      price: 194, stockByStore: {}, createdAt: Date.now() });
+    saveDB();
+  });
+  const withStray = await p.evaluate((t) => parseChatText(t, '').map((r) => {
+    const prod = db.products.find((x) => x.id === r.productId);
+    return `${(prod || {}).name || '（なし）'}/@${r.unitPrice}`;
+  }), NOTICE);
+  console.log('\n--- 値段なしの「カボチャ」が残っている状態 ---');
+  withStray.forEach(r => console.log('  ', r));
+  check('194円は180円の段に入る（値段なしに吸われない）',
+    withStray.join(' '),
+    'カボチャ（330円）/@356 カボチャ（280円）/@302 カボチャ（230円）/@248 カボチャ（180円）/@194');
+
+  await p.click('.tab-btn[data-screen="stock"]'); await p.waitForTimeout(300);
+  const strayRow = await p.evaluate(() => {
+    const el = Array.from(document.querySelectorAll('#product-list .list-item'))
+      .find((x) => x.querySelector('.list-item-title').textContent === 'カボチャ');
+    return el ? el.querySelector('.list-item-sub').textContent : null;
+  });
+  check('一覧で気づける', /値段ちがいの台帳があります/.test(strayRow || ''), true);
+  await p.evaluate(() => { db.products = db.products.filter((x) => x.id !== 'stray'); saveDB(); });
+
   // ---- 5. 集計も段ごとに分かれるか ----
   await p.click('.tab-btn[data-screen="report"]');
   await p.click('#report-range-chips .chip[data-range="all"]'); await p.waitForTimeout(300);

@@ -8,7 +8,7 @@
 
 // 画面に出す版。直したはずの動きが変わらないとき、スマホが古いものを
 // 掴んでいるのか、直し方が足りないのかを切り分けるために使う。
-const APP_VERSION = "2026-10-29b";
+const APP_VERSION = "2026-10-29c";
 
 const STORAGE_KEY = "greenDays.v1";
 const SNAPSHOT_KEY = "greenDays.snapshots.v1";
@@ -654,9 +654,10 @@ function renderStockList() {
       const qty = store ? getStock(p, store.id) : totalStock(p);
       // 全店表示では、その商品を扱っている店舗数を添える
       const storeCount = p.stockByStore ? Object.keys(p.stockByStore).length : 0;
-      const sub = store
+      let sub = store
         ? (p.category ? `${p.category}・` : "") + formatYen(p.price)
         : (p.category ? `${p.category}・` : "") + `${formatYen(p.price)}・${storeCount}店舗`;
+      if (isStrayBesideTiers(p)) sub += "・値段ちがいの台帳があります";
       list.appendChild(
         buildListItem({
           title: p.name,
@@ -778,6 +779,11 @@ function enteredPrices() {
     .filter((v) => (seen.has(v) ? false : seen.add(v)));
 }
 
+/**
+ * 値段ちがいの台帳があるのに、値段のついていないほうが残っている商品。
+ * 取込で先に自動登録されたものがこれになりやすい。放っておくと、どちらに
+ * 入ったのか分からなくなるので、一覧で分かるようにする。
+ */
 /** その品名で、すでに値段ちがいの台帳をつけているか */
 function hasPriceTiersFor(name) {
   const key = matchKey(name);
@@ -785,6 +791,16 @@ function hasPriceTiersFor(name) {
     const tier = splitPriceTier(p.name);
     return tier.tierPrice !== null && matchKey(tier.base) === key;
   });
+}
+
+/**
+ * 値段ちがいの台帳があるのに、値段のついていないほうが残っている商品か。
+ * 取込で先に自動登録されたものがこうなりやすい。残っていると売上がどちらに
+ * 入ったのか分からなくなるので、一覧で気づけるようにする。
+ */
+function isStrayBesideTiers(product) {
+  if (splitPriceTier(product.name).tierPrice !== null) return false;
+  return hasPriceTiersFor(product.name);
 }
 
 document.getElementById("btn-add-price").addEventListener("click", () => addPriceRow(""));
@@ -1346,11 +1362,19 @@ function tierPriceHint(qty, prices, hintUnitPrice) {
  */
 function pickPriceTier(candidates, hint) {
   if (!candidates || candidates.length <= 1) return (candidates && candidates[0]) || null;
-  if (hint === null || hint === undefined) return candidates[0];
 
-  let best = candidates[0];
+  // 値段ちがいの台帳をつけている品目に、値段のついていない「カボチャ」が
+  // 残っていることがある。取込で先に自動登録されたときなど。そのままだと
+  // 売値がたまたま近いときにそちらへ吸い込まれ、どの段にも入らない。
+  // 段をつけたのなら、段のほうが本体。
+  const tiers = candidates.filter((p) => splitPriceTier(p.name).tierPrice !== null);
+  const list = tiers.length > 0 ? tiers : candidates;
+  if (list.length === 1) return list[0];
+  if (hint === null || hint === undefined) return list[0];
+
+  let best = list[0];
   let bestGap = Infinity;
-  candidates.forEach((p) => {
+  list.forEach((p) => {
     const tier = splitPriceTier(p.name).tierPrice;
     const price = tier !== null ? tier : Number(p.price) || 0;
     const gap = Math.abs(price - hint);
