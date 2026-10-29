@@ -8,7 +8,7 @@
 
 // 画面に出す版。直したはずの動きが変わらないとき、スマホが古いものを
 // 掴んでいるのか、直し方が足りないのかを切り分けるために使う。
-const APP_VERSION = "2026-10-29a";
+const APP_VERSION = "2026-10-29b";
 
 const STORAGE_KEY = "greenDays.v1";
 const SNAPSHOT_KEY = "greenDays.snapshots.v1";
@@ -739,6 +739,56 @@ function renderStockStoreChips() {
 
 document.getElementById("btn-new-product").addEventListener("click", () => openProductForm(null));
 
+/**
+ * 値段の入力欄をひとつ足す。値段ちがいを「330, 280」のように1つの欄へ
+ * 並べて書く形にしていたが、スマホの数字キーボードには「,」が無い。
+ * 欄そのものを増やすほうが、キーボードを切り替えずに入れられる。
+ */
+function addPriceRow(value) {
+  const rows = document.getElementById("product-price-rows");
+  const row = document.createElement("div");
+  row.className = "price-row";
+
+  const input = document.createElement("input");
+  input.type = "number";
+  input.min = "0";
+  input.step = "1";
+  input.inputMode = "numeric";
+  if (value !== undefined && value !== null && value !== "") input.value = String(value);
+  row.appendChild(input);
+
+  const del = document.createElement("button");
+  del.type = "button";
+  del.className = "price-row-del";
+  del.textContent = "✕";
+  del.setAttribute("aria-label", "この値段を消す");
+  del.addEventListener("click", () => row.remove());
+  row.appendChild(del);
+
+  rows.appendChild(row);
+  input.focus();
+}
+
+/** 入力されている値段。空欄は飛ばし、同じ値段は1つにまとめる */
+function enteredPrices() {
+  const seen = new Set();
+  return Array.from(document.querySelectorAll("#product-price-rows input"))
+    .map((input) => Number(input.value))
+    .filter((v) => Number.isFinite(v) && v > 0)
+    .filter((v) => (seen.has(v) ? false : seen.add(v)));
+}
+
+/** その品名で、すでに値段ちがいの台帳をつけているか */
+function hasPriceTiersFor(name) {
+  const key = matchKey(name);
+  return db.products.some((p) => {
+    const tier = splitPriceTier(p.name);
+    return tier.tierPrice !== null && matchKey(tier.base) === key;
+  });
+}
+
+document.getElementById("btn-add-price").addEventListener("click", () => addPriceRow(""));
+
 function openProductForm(id) {
   const product = id ? findProduct(id) : null;
   document.getElementById("product-form-title").textContent = product ? "商品を編集" : "商品を追加";
@@ -747,11 +797,15 @@ function openProductForm(id) {
   document.getElementById("product-category").value = product ? product.category || "" : "";
   document.getElementById("product-aliases").value =
     product && Array.isArray(product.aliases) ? product.aliases.join("、") : "";
+  // 2つめから先の欄は作り直す。前に開いたときの値段が残らないように
+  document.getElementById("product-price-rows")
+    .querySelectorAll(".price-row:not(:first-child)")
+    .forEach((row) => row.remove());
   document.getElementById("product-price").value = product ? product.price : "";
-  // 値段ちがいをまとめて作れるのは、新しく追加するときだけ。すでにある
-  // 商品を編集しているときに出すと、何が起きるのか分からない
-  document.getElementById("product-tiers").value = "";
-  document.getElementById("product-tiers-field").hidden = Boolean(product);
+  // 値段ちがいを作れるのは、新しく追加するときだけ。すでにある商品を
+  // 編集しているときに増やせると、何が起きるのか分からない
+  document.getElementById("btn-add-price").hidden = Boolean(product);
+  document.getElementById("product-price-hint").hidden = Boolean(product);
   document.getElementById("btn-product-delete").hidden = !product;
   renderProductStockRows(product);
 
@@ -845,9 +899,10 @@ document.getElementById("product-form").addEventListener("submit", (e) => {
     return;
   }
 
-  // 「330, 280, 230, 180」のように値段を並べたら、その数だけ商品を作る
-  const tiers = parsePriceTiers(document.getElementById("product-tiers").value);
-  if (tiers.length > 0) {
+  // 値段を2つ以上入れたら、その数だけ商品を作る。すでにその品名で
+  // 値段ちがいの台帳をつけているなら、1つだけ足すときも同じ形にする
+  const tiers = enteredPrices();
+  if (tiers.length > 1 || (tiers.length === 1 && hasPriceTiersFor(name))) {
     const made = [];
     tiers.forEach((tierPrice) => {
       const tierName = `${name}（${tierPrice}円）`;
@@ -980,17 +1035,6 @@ function matchKey(str) {
 /** 商品の呼び名すべて（登録名＋別名） */
 function productNames(product) {
   return [product.name, ...(Array.isArray(product.aliases) ? product.aliases : [])];
-}
-
-/** 「330, 280、230」のように並べた値段を、大きい順の数字にする */
-function parsePriceTiers(text) {
-  const seen = new Set();
-  return String(text)
-    .split(/[,、，\s]+/)
-    .map((v) => Number(String(v).replace(/[¥￥円,]/g, "")))
-    .filter((v) => Number.isFinite(v) && v > 0)
-    .filter((v) => (seen.has(v) ? false : seen.add(v)))
-    .sort((a, b) => b - a);
 }
 
 function parseAliasInput(text) {
