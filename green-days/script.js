@@ -8,7 +8,7 @@
 
 // 画面に出す版。直したはずの動きが変わらないとき、スマホが古いものを
 // 掴んでいるのか、直し方が足りないのかを切り分けるために使う。
-const APP_VERSION = "2026-08-27j";
+const APP_VERSION = "2026-10-29a";
 
 const STORAGE_KEY = "greenDays.v1";
 const SNAPSHOT_KEY = "greenDays.snapshots.v1";
@@ -748,6 +748,10 @@ function openProductForm(id) {
   document.getElementById("product-aliases").value =
     product && Array.isArray(product.aliases) ? product.aliases.join("、") : "";
   document.getElementById("product-price").value = product ? product.price : "";
+  // 値段ちがいをまとめて作れるのは、新しく追加するときだけ。すでにある
+  // 商品を編集しているときに出すと、何が起きるのか分からない
+  document.getElementById("product-tiers").value = "";
+  document.getElementById("product-tiers-field").hidden = Boolean(product);
   document.getElementById("btn-product-delete").hidden = !product;
   renderProductStockRows(product);
 
@@ -835,17 +839,49 @@ document.getElementById("product-form").addEventListener("submit", (e) => {
     product.aliases = aliases;
     product.price = price;
     product.stockByStore = stockByStore;
-  } else {
-    db.products.push({
-      id: uid(),
-      name,
-      category,
-      aliases,
-      price,
-      stockByStore,
-      createdAt: Date.now(),
-    });
+    saveDB();
+    showToast("商品を保存しました");
+    showScreen("stock");
+    return;
   }
+
+  // 「330, 280, 230, 180」のように値段を並べたら、その数だけ商品を作る
+  const tiers = parsePriceTiers(document.getElementById("product-tiers").value);
+  if (tiers.length > 0) {
+    const made = [];
+    tiers.forEach((tierPrice) => {
+      const tierName = `${name}（${tierPrice}円）`;
+      if (db.products.some((p) => matchKey(p.name) === matchKey(tierName))) return;
+      db.products.push({
+        id: uid(),
+        name: tierName,
+        category,
+        aliases,
+        price: tierPrice,
+        stockByStore: { ...stockByStore },
+        createdAt: Date.now(),
+      });
+      made.push(tierName);
+    });
+    if (made.length === 0) {
+      showToast("その値段の商品はすでにあります");
+      return;
+    }
+    saveDB();
+    showToast(`${made.length}件の商品を作りました：${made.join("、")}`);
+    showScreen("stock");
+    return;
+  }
+
+  db.products.push({
+    id: uid(),
+    name,
+    category,
+    aliases,
+    price,
+    stockByStore,
+    createdAt: Date.now(),
+  });
   saveDB();
   showToast("商品を保存しました");
   showScreen("stock");
@@ -944,6 +980,17 @@ function matchKey(str) {
 /** 商品の呼び名すべて（登録名＋別名） */
 function productNames(product) {
   return [product.name, ...(Array.isArray(product.aliases) ? product.aliases : [])];
+}
+
+/** 「330, 280、230」のように並べた値段を、大きい順の数字にする */
+function parsePriceTiers(text) {
+  const seen = new Set();
+  return String(text)
+    .split(/[,、，\s]+/)
+    .map((v) => Number(String(v).replace(/[¥￥円,]/g, "")))
+    .filter((v) => Number.isFinite(v) && v > 0)
+    .filter((v) => (seen.has(v) ? false : seen.add(v)))
+    .sort((a, b) => b - a);
 }
 
 function parseAliasInput(text) {
@@ -1127,14 +1174,19 @@ function extractPrices(line) {
  */
 function findByNameInLine(line, list, namesOf) {
   const key = matchKey(line);
-  let best = null;
+  let best = [];
   let bestLength = 0;
   list.forEach((item) => {
     namesOf(item).forEach((name) => {
-      const nameKey = matchKey(name);
-      if (nameKey && key.includes(nameKey) && nameKey.length > bestLength) {
-        best = item;
+      // 値段ちがいは名前では見分けない。同じ長さで並んだものは全部返し、
+      // どれかは呼ぶ側が金額で決める
+      const nameKey = matchKey(splitPriceTier(name).base);
+      if (!nameKey || !key.includes(nameKey)) return;
+      if (nameKey.length > bestLength) {
         bestLength = nameKey.length;
+        best = [item];
+      } else if (nameKey.length === bestLength && !best.includes(item)) {
+        best.push(item);
       }
     });
   });
@@ -1219,6 +1271,53 @@ function guessProductName(line, strict) {
 /** 商品の選択欄で「まだ登録していない商品」を表す値 */
 const NEW_PRODUCT_VALUE = "__new__";
 
+/**
+ * 名前の末尾の「（330円）」は、品種の区別ではなく値段の区別。
+ * 同じカボチャを値段ごとに分けて台帳をつけたい、という使い方のためのもの。
+ * 名前を当てるときはここを外し、どの値段のものかは文章の金額で選ぶ。
+ *
+ * 「玉ねぎ（紫）」のように中身が金額でないかっこは、これまでどおり
+ * 別の商品を表す目印なので、外さない。
+ */
+function splitPriceTier(name) {
+  const m = String(name).match(/^(.*?)\s*[（(]\s*[¥￥]?\s*([\d,]+)\s*円?\s*[）)]\s*$/);
+  if (!m || !m[1].trim()) return { base: String(name), tierPrice: null };
+  return { base: m[1].trim(), tierPrice: Number(m[2].replace(/,/g, "")) };
+}
+
+/** 値段ちがいを選ぶための、文章から読める1点あたりの金額 */
+function tierPriceHint(qty, prices, hintUnitPrice) {
+  const explicit = prices.find((p) => p.isUnit);
+  if (explicit) return explicit.value;
+  if (hintUnitPrice !== null && hintUnitPrice !== undefined) return hintUnitPrice;
+  const values = prices.filter((p) => !p.isUnit).map((p) => p.value);
+  if (!values.length) return null;
+  return qty > 0 ? Math.max(...values) / qty : Math.max(...values);
+}
+
+/**
+ * 同じ名前で値段ちがいの商品が並んでいるとき、文章の金額にいちばん近い
+ * ものを選ぶ。店のお知らせは税込、こちらの登録は税抜ということがあるが、
+ * その差が段の間隔より小さければ正しい段に収まる。
+ */
+function pickPriceTier(candidates, hint) {
+  if (!candidates || candidates.length <= 1) return (candidates && candidates[0]) || null;
+  if (hint === null || hint === undefined) return candidates[0];
+
+  let best = candidates[0];
+  let bestGap = Infinity;
+  candidates.forEach((p) => {
+    const tier = splitPriceTier(p.name).tierPrice;
+    const price = tier !== null ? tier : Number(p.price) || 0;
+    const gap = Math.abs(price - hint);
+    if (gap < bestGap) {
+      bestGap = gap;
+      best = p;
+    }
+  });
+  return best;
+}
+
 /** 「玉ねぎ（紫）」のかっこの中身。かっこが無ければ "" */
 function qualifierInName(nameText) {
   const m = String(nameText).match(/[（(【［\[]([^）)】］\]]*)[）)】］\]]/);
@@ -1233,7 +1332,7 @@ function qualifierInName(nameText) {
  * 計上されてしまう。かっこの中身まで名前に持つ商品だけを候補にし、
  * 見つからなければ未登録として扱う（取込画面で新しく登録できる）。
  */
-function findProductInLine(line) {
+function findProductsInLine(line) {
   const qualifier = qualifierInName(guessProductName(line, false));
   if (!qualifier) return findByNameInLine(line, db.products, productNames);
 
@@ -1244,13 +1343,28 @@ function findProductInLine(line) {
   return findByNameInLine(line, candidates, productNames);
 }
 
+/**
+ * 行に書かれた商品。値段ちがいが並んでいるときは、その行から読める
+ * 金額で選ぶ。金額が別の行にある形式では、ここではまだ決まらないので
+ * 候補のまま持ち回り、明細がそろってから buildRow で選び直す。
+ */
+function findProductInLine(line) {
+  const candidates = findProductsInLine(line);
+  const qty = extractQty(line);
+  const prices = extractPrices(line);
+  return pickPriceTier(candidates, tierPriceHint(qty === null ? 1 : qty, prices, null));
+}
+
 function findStoreInLine(line) {
-  return findByNameInLine(line, db.stores, (s) => [s.name]);
+  return findByNameInLine(line, db.stores, (s) => [s.name])[0] || null;
 }
 
 /** 売上候補を1件つくる */
-function buildRow({ source, storeId, product, newProductName, qty, prices, hintUnitPrice, date }) {
+function buildRow({ source, storeId, candidates, newProductName, qty, prices, hintUnitPrice, date }) {
   const finalQty = qty !== null && qty > 0 ? qty : 1;
+  // 値段ちがいは、明細がそろったこの時点で決める。品名の行には金額が
+  // 書かれていないことがあるため
+  const product = pickPriceTier(candidates, tierPriceHint(finalQty, prices, hintUnitPrice));
   const resolved = resolveUnitPrice(product, finalQty, prices, hintUnitPrice);
   const unitPrice = Number.isFinite(resolved.unitPrice) ? resolved.unitPrice : 0;
 
@@ -1295,7 +1409,7 @@ function parseChatText(text, defaultStoreId) {
   const rows = [];
   let contextDate = todayStr();
   let contextStoreId = defaultStoreId || "";
-  let pending = null; // { product, storeId, unitPrice, sources }
+  let pending = null; // { candidates, newProductName, storeId, unitPrice, sources }
 
   lines.forEach((rawLine) => {
     const line = rawLine.trim();
@@ -1311,7 +1425,8 @@ function parseChatText(text, defaultStoreId) {
     const storeFound = findStoreInLine(line);
     if (storeFound) contextStoreId = storeFound.id;
 
-    const product = findProductInLine(line);
+    const candidates = findProductsInLine(line);
+    const product = candidates.length > 0;
     const qty = extractQty(line);
     const prices = extractPrices(line);
 
@@ -1327,7 +1442,7 @@ function parseChatText(text, defaultStoreId) {
         buildRow({
           source: pending.sources.join("　"),
           storeId: pending.storeId,
-          product: pending.product,
+          candidates: pending.candidates,
           newProductName: pending.newProductName,
           qty,
           prices,
@@ -1346,7 +1461,7 @@ function parseChatText(text, defaultStoreId) {
       // ここで品名を捨てると、2つめから先が行き場をなくして落ちてしまう。
       // 品名は残したまま、単価と読み取った行だけ戻す。
       pending = {
-        product: pending.product,
+        candidates: pending.candidates,
         newProductName: pending.newProductName,
         storeId: pending.storeId,
         unitPrice: null,
@@ -1357,7 +1472,7 @@ function parseChatText(text, defaultStoreId) {
 
     // 品名だけの行 → 続きの明細を待つ
     if (product && qty === null && prices.length === 0) {
-      pending = { product, storeId: contextStoreId, unitPrice: null, sources: [line] };
+      pending = { candidates, storeId: contextStoreId, unitPrice: null, sources: [line] };
       return;
     }
 
@@ -1367,7 +1482,7 @@ function parseChatText(text, defaultStoreId) {
       const guessed = guessProductName(line, true);
       if (guessed) {
         pending = {
-          product: null,
+          candidates: [],
           newProductName: guessed,
           storeId: contextStoreId,
           unitPrice: null,
@@ -1386,7 +1501,7 @@ function parseChatText(text, defaultStoreId) {
       buildRow({
         source: line,
         storeId: storeFound ? storeFound.id : contextStoreId,
-        product,
+        candidates,
         newProductName: product ? "" : guessProductName(line, false),
         qty,
         prices,
