@@ -30,10 +30,19 @@ const SAMPLE_WORDS = [
 
 let db = loadDB();
 
-// 端末の時計での日付（YYYY-MM-DD）。日付の切りかわりは深夜0時
-function todayStr(d = new Date()) {
+// 「今日」が切りかわる時刻。夜12時をすぎて勉強しても、朝4時までは前の日の分として数える
+// （夜おそくの勉強が次の日に入って、前の日が空になり連続日数が切れてしまわないように）
+const DAY_START_HOUR = 4;
+
+// 日付を YYYY-MM-DD にする（端末の時計で）
+function dateStr(d) {
   const pad = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+// 学習の記録に使う「今日」の日付。朝4時までは前の日
+function todayStr(d = new Date()) {
+  return dateStr(new Date(d.getTime() - DAY_START_HOUR * 60 * 60 * 1000));
 }
 
 function newId() {

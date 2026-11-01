@@ -969,9 +969,27 @@ $("csv-file").addEventListener("change", async (e) => {
 // ---------------------------------------------------------------
 show("home");
 
-// ホーム画面に置いたまま次の日に開いたときも、今日の数字に直す
+// ほかの画面が保存した記録を読みなおす。ホーム画面のアプリとブラウザのタブのように
+// 2か所で開いていると、古い記録を持ったままの画面があとで保存したときに、
+// もう一方で学習した分を上書きして消してしまうため。
+function reloadDB() {
+  db = loadDB();
+  if (!$("view-home").hidden) renderHome();
+  else if (!$("view-words").hidden) renderWords();
+  else if (!$("view-settings").hidden) renderSettings();
+}
+
+// 別のタブや画面が保存したとき
+window.addEventListener("storage", (e) => {
+  if (e.key === STORE_KEY || e.key === null) reloadDB();
+});
+// アプリを前に出したとき（裏にいる間は storage の知らせが届かないことがある）。
+// ホーム画面に置いたまま次の日に開いたときも、ここで今日の数字に直る
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && !$("view-home").hidden) renderHome();
+  if (document.visibilityState === "visible") reloadDB();
+});
+window.addEventListener("pageshow", (e) => {
+  if (e.persisted) reloadDB();
 });
 
 // オフラインでも開けるようにする（https か localhost のときだけ動く）

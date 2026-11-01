@@ -482,6 +482,76 @@ function check(name, ok, detail) {
   const [dl6] = await Promise.all([p.waitForEvent("download"), p.click("#csv-export")]);
   check("書き出しにも学年", fs.readFileSync(await dl6.path(), "utf8").includes("eraser,消しゴム,単語,,,2年"));
 
+  // --- 日付の切りかわり（朝4時）---
+  const day = await p.evaluate(() => [
+    todayStr(new Date(2026, 9, 31, 0, 30)),
+    todayStr(new Date(2026, 9, 31, 3, 59)),
+    todayStr(new Date(2026, 9, 31, 4, 0)),
+    addDays("2026-10-31", 1),
+    addDays("2026-03-01", -1),
+  ]);
+  check("朝4時までは前の日", JSON.stringify(day) === JSON.stringify(["2026-10-30", "2026-10-30", "2026-10-31", "2026-11-01", "2026-02-28"]),
+    JSON.stringify(day));
+
+  // 29日の夜と、30日の夜おそく（0:30）に勉強 → 31日の夜は「2日連続」
+  {
+    const c2 = await b.newContext();
+    await c2.addInitScript(() => {
+      const D = Date; let off = 0;
+      window.__setNow = (ms) => { off = ms - D.now(); };
+      window.Date = class extends D { constructor(...a) { if (a.length) super(...a); else super(D.now() + off); } static now() { return D.now() + off; } };
+    });
+    const q = await c2.newPage();
+    await q.goto(URL);
+    await q.evaluate(() => localStorage.clear());
+    await q.reload();
+    for (const t of [[2026, 9, 29, 21, 0], [2026, 9, 31, 0, 30]]) {
+      await q.evaluate((t) => __setNow(new Date(...t).getTime()), t);
+      await q.click('[data-scope="all"]');
+      await q.click('[data-mode="cards"]');
+      for (let i = 0; i < 2; i++) {
+        await q.click("#flashcard", { position: { x: 30, y: 60 } });
+        await q.click("#ans-known");
+      }
+      await q.click("#study-quit");
+    }
+    check("夜12時すぎの勉強は前の日の分", await q.evaluate(() => db.log["2026-10-30"] && db.log["2026-10-30"].count === 2 && !db.log["2026-10-31"]));
+    await q.evaluate(() => { __setNow(new Date(2026, 9, 31, 19, 0).getTime()); renderHome(); });
+    check("夜おそくの勉強で連続日数が切れない", (await q.textContent("#stat-streak")) === "2"
+      && (await q.textContent("#streak-note")).includes("3日連続"));
+
+    // 同じアプリを2か所で開いていても、あとで保存した画面が先の学習を消さない
+    const A = q;
+    await A.evaluate(() => { __setNow(new Date(2026, 10, 1, 19, 0).getTime()); });
+    const B = await c2.newPage();
+    await B.goto(URL);
+    await B.evaluate(() => { __setNow(new Date(2026, 10, 1, 19, 5).getTime()); });
+    await B.click('[data-scope="all"]');
+    await B.click('[data-mode="cards"]');
+    for (let i = 0; i < 3; i++) {
+      await B.click("#flashcard", { position: { x: 30, y: 60 } });
+      await B.click("#ans-known");
+    }
+    await B.click("#study-quit");
+    check("別の画面の保存を読みなおす", await A.evaluate(() => db.log["2026-11-01"] && db.log["2026-11-01"].count === 3));
+    await A.click('[data-scope="all"]');
+    await A.click('[data-mode="cards"]');
+    await A.click("#flashcard", { position: { x: 30, y: 60 } });
+    await A.click("#ans-known");
+    await A.click("#study-quit");
+    check("2か所で開いても学習が消えない", await B.evaluate(() =>
+      JSON.parse(localStorage.getItem(STORE_KEY)).log["2026-11-01"].count >= 3));
+    // 裏にいる間に保存された分も、前に出したときに読みなおす
+    await A.evaluate(() => {
+      const s = JSON.parse(localStorage.getItem(STORE_KEY));
+      s.settings.newPerDay = 17;
+      localStorage.setItem(STORE_KEY, JSON.stringify(s));
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    check("前に出したときに読みなおす", await A.evaluate(() => db.settings.newPerDay === 17));
+    await c2.close();
+  }
+
   // --- オフライン ---
   await p.goto(URL);
   await p.evaluate(() => navigator.serviceWorker.ready);

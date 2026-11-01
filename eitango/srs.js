@@ -8,9 +8,9 @@ const INTERVALS = [0, 1, 3, 7, 14, 30, 60];
 const MAX_LEVEL = INTERVALS.length - 1;
 const MASTERED_LEVEL = 4;
 
-function addDays(dateStr, n) {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  return todayStr(new Date(y, m - 1, d + n));
+function addDays(day, n) {
+  const [y, m, d] = day.split("-").map(Number);
+  return dateStr(new Date(y, m - 1, d + n));
 }
 
 // まだ一度も学習していない単語
