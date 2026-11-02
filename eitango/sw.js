@@ -1,4 +1,4 @@
-const CACHE_NAME = "eitango-cache-v10";
+const CACHE_NAME = "eitango-cache-v11";
 const ASSETS = [
   "./",
   "./index.html",

@@ -77,14 +77,20 @@ function freshDB() {
   };
 }
 
-function loadDB() {
-  let data = null;
+function readStored() {
   try {
-    data = JSON.parse(localStorage.getItem(STORE_KEY));
+    const data = JSON.parse(localStorage.getItem(STORE_KEY));
+    return data && Array.isArray(data.words) ? normalizeDB(data) : null;
   } catch (e) {
-    data = null;
+    return null;
   }
-  if (!data || !Array.isArray(data.words)) data = freshDB();
+}
+
+function loadDB() {
+  return readStored() || normalizeDB(freshDB());
+}
+
+function normalizeDB(data) {
   // あとから増えた設定項目は初期値でうめる
   data.settings = { ...DEFAULT_SETTINGS, ...(data.settings || {}) };
   if (!data.log || typeof data.log !== "object") data.log = {};
@@ -97,8 +103,34 @@ function loadDB() {
   return data;
 }
 
+// 2か所で開いていて、読みこんだあとに別の画面が保存していたときは、上書きせずに合わせる。
+// 単語は答えた回数が多いほう、日ごとの記録は数の大きいほうを残す。
+// （別の画面で増えた単語も残す。そのかわり、ここで消した単語が別の画面から戻ることはある）
+function mergeDB(stored, mine) {
+  const theirs = new Map(stored.words.map((w) => [w.id, w]));
+  const words = mine.words.map((w) => {
+    const s = theirs.get(w.id);
+    theirs.delete(w.id);
+    return s && (s.reps || 0) > (w.reps || 0) ? s : w;
+  });
+  words.push(...theirs.values());
+  const log = { ...stored.log };
+  for (const [day, v] of Object.entries(mine.log)) {
+    const s = log[day];
+    log[day] = s
+      ? Object.fromEntries(Object.keys({ ...s, ...v }).map((k) => [k, Math.max(s[k] || 0, v[k] || 0)]))
+      : v;
+  }
+  return { ...mine, words, log };
+}
+
+// 保存のたびに rev を1つ増やす。読みこんだときの rev と今の保存の rev がちがえば、
+// そのあいだに別の画面が保存している
 function saveDB() {
   try {
+    const stored = readStored();
+    if (stored && (stored.rev || 0) !== (db.rev || 0)) db = mergeDB(stored, db);
+    db.rev = Math.max(db.rev || 0, (stored && stored.rev) || 0) + 1;
     localStorage.setItem(STORE_KEY, JSON.stringify(db));
   } catch (e) {
     alert("保存できませんでした。端末の空き容量やブラウザの設定を確かめてください。");

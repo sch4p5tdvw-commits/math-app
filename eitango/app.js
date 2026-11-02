@@ -890,6 +890,8 @@ $("goal-minus").addEventListener("click", () => changeGoal(-1));
 $("goal-plus").addEventListener("click", () => changeGoal(1));
 
 $("backup-save").addEventListener("click", () => {
+  // 画面が持っている記録ではなく、保存されている最新の記録を書き出す
+  db = loadDB();
   downloadText(`eitango-backup-${todayStr()}.json`, JSON.stringify(db), "application/json");
 });
 $("backup-load").addEventListener("click", () => $("backup-file").click());

@@ -549,6 +549,27 @@ function check(name, ok, detail) {
       document.dispatchEvent(new Event("visibilitychange"));
     });
     check("前に出したときに読みなおす", await A.evaluate(() => db.settings.newPerDay === 17));
+
+    // 知らせが届かず古い記録のままの画面が保存しても、別の画面の学習を消さずに合わせる
+    const snap = await A.evaluate(() => JSON.stringify(db));
+    // 答えた回数（同じ単語を2回答えても2と数える）
+    const answers = (d) => d.log["2026-11-01"].correct + d.log["2026-11-01"].wrong;
+    const reps = (d) => d.words.reduce((n, w) => n + (w.reps || 0), 0);
+    const before = JSON.parse(snap);
+    await B.evaluate(() => { __setNow(new Date(2026, 10, 1, 20, 0).getTime()); });
+    await B.click('[data-mode="cards"]');
+    for (let i = 0; i < 2; i++) {
+      await B.click("#flashcard", { position: { x: 30, y: 60 } });
+      await B.click("#ans-known");
+    }
+    await B.click("#study-quit");
+    await A.evaluate((s) => { db = JSON.parse(s); }, snap);
+    await A.click('#grade-filter [data-grade="1"]');
+    const merged = await A.evaluate(() => JSON.parse(localStorage.getItem(STORE_KEY)));
+    check("古い画面が保存しても学習を合わせて残す",
+      answers(merged) === answers(before) + 2 && reps(merged) === reps(before) + 2 && merged.settings.gradeFilter === 1,
+      JSON.stringify(merged.log["2026-11-01"]));
+    check("バックアップは保存されている最新の記録", await A.evaluate(() => { db = { words: [], log: {} }; $("backup-save").click(); return db.words.length > 0; }));
     await c2.close();
   }
 
