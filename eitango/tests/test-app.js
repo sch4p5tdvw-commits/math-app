@@ -9,6 +9,18 @@ const path = require("path");
 
 const URL = "http://localhost:8822/index.html";
 let failed = 0;
+// 記録を全部消して、はじめて開いたときの状態にする（localStorage と控えの IndexedDB の両方）
+async function resetStorage(page) {
+  await page.evaluate(async () => {
+    await storageReady;
+    localStorage.clear();
+    await new Promise((r) => {
+      const q = indexedDB.deleteDatabase("eitango");
+      q.onsuccess = q.onerror = q.onblocked = r;
+    });
+  });
+}
+
 function check(name, ok, detail) {
   console.log(`${ok ? "ok  " : "NG  "} ${name}${ok || detail === undefined ? "" : "  → " + detail}`);
   if (!ok) failed++;
@@ -26,7 +38,7 @@ function check(name, ok, detail) {
   p.on("dialog", (d) => { dialogs.push(d.message()); d.accept(); });
 
   await p.goto(URL);
-  await p.evaluate(() => localStorage.clear());
+  await resetStorage(p);
   await p.reload();
   const en = () => p.evaluate(() => currentWord().en);
   // アプリのキーボードのキーを1つずつ押して書く
@@ -252,7 +264,7 @@ function check(name, ok, detail) {
   check("目標を変える", await p.evaluate(() => db.settings.newPerDay === 11));
 
   // --- 効果音・同じ意味の単語・例文 ---
-  await p.evaluate(() => localStorage.clear());
+  await resetStorage(p);
   await p.reload();
   // 前の版で保存したサンプル（例文の訳がない）を開いたとき
   await p.evaluate(() => { for (const w of db.words) delete w.exampleJa; saveDB(); });
@@ -368,7 +380,7 @@ function check(name, ok, detail) {
   check("書き出しにも例文の訳", fs.readFileSync(await dl5.path(), "utf8").includes("quiet,静かな,単語,Be quiet.,静かにしなさい。"));
 
   // --- 今日やった単語 ---
-  await p.evaluate(() => localStorage.clear());
+  await resetStorage(p);
   await p.reload();
   dialogs.length = 0;
   await p.click('[data-scope="done"]');
@@ -413,7 +425,7 @@ function check(name, ok, detail) {
   await p.click("#study-quit");
 
   // --- 学年 ---
-  await p.evaluate(() => localStorage.clear());
+  await resetStorage(p);
   await p.reload();
   check("サンプルにも学年", await p.evaluate(() => db.words.find((w) => w.en === "borrow").grade === 2));
   await p.evaluate(() => { for (const w of db.words) delete w.grade; saveDB(); });
@@ -503,7 +515,7 @@ function check(name, ok, detail) {
     });
     const q = await c2.newPage();
     await q.goto(URL);
-    await q.evaluate(() => localStorage.clear());
+    await resetStorage(q);
     await q.reload();
     for (const t of [[2026, 9, 29, 21, 0], [2026, 9, 31, 0, 30]]) {
       await q.evaluate((t) => __setNow(new Date(...t).getTime()), t);
@@ -572,6 +584,54 @@ function check(name, ok, detail) {
     check("バックアップは保存されている最新の記録", await A.evaluate(() => { db = { words: [], log: {} }; $("backup-save").click(); return db.words.length > 0; }));
     await c2.close();
   }
+
+  // --- 記録がもどったり消えたりしたとき（控えの IndexedDB からもどす）---
+  await resetStorage(p);
+  await p.reload();
+  await p.evaluate(() => storageReady);
+  const studyCards = async (n) => {
+    await p.click('[data-scope="all"]');
+    await p.click('[data-mode="cards"]');
+    for (let i = 0; i < n; i++) {
+      await p.click("#flashcard", { position: { x: 30, y: 60 } });
+      await p.click("#ans-known");
+    }
+    await p.click("#study-quit");
+  };
+  await studyCards(2);
+  const oldJson = await p.evaluate(() => localStorage.getItem(STORE_KEY));
+  await studyCards(3);
+  await p.waitForTimeout(200);
+  const revs = await p.evaluate(async () => [JSON.parse(localStorage.getItem(STORE_KEY)).rev, JSON.parse(await idbGet()).rev]);
+  check("控えにも同じ記録を書く", revs[0] === revs[1], JSON.stringify(revs));
+  const reps = () => p.evaluate(() => db.words.reduce((n, w) => n + (w.reps || 0), 0));
+  const repsNow = await reps();
+
+  // 端末が localStorage を前の状態にもどしてしまったとき
+  await p.evaluate((j) => localStorage.setItem(STORE_KEY, j), oldJson);
+  await p.reload();
+  await p.evaluate(() => storageReady);
+  check("前の状態にもどっても控えからもどす", (await reps()) === repsNow, `${await reps()} / ${repsNow}`);
+  const last = await p.evaluate(() => db.diag[db.diag.length - 1]);
+  check("もどしたことを記録に残す", last.restored === true && last.idb > last.ls && "persisted" in last, JSON.stringify(last));
+  check("もどした記録は localStorage にも書きもどす", await p.evaluate(() =>
+    JSON.parse(localStorage.getItem(STORE_KEY)).words.reduce((n, w) => n + (w.reps || 0), 0)) === repsNow);
+
+  // 端末が localStorage を消してしまったとき
+  const nWords = await p.evaluate(() => db.words.length);
+  await p.evaluate(() => localStorage.removeItem(STORE_KEY));
+  await p.reload();
+  await p.evaluate(() => storageReady);
+  check("消えても控えからもどす（単語がふえない）", (await reps()) === repsNow && (await p.evaluate(() => db.words.length)) === nWords);
+
+  await p.click('.tab[data-view="settings"]');
+  check("最後に保存した時刻を見せる", (await p.textContent("#save-status")).includes("最後に保存した時刻")
+    && (await p.textContent("#save-status")).includes("控えから記録をもどした"));
+  check("ふだんは何ももどさない", await p.evaluate(async () => {
+    await new Promise((r) => setTimeout(r, 100));
+    return !(await checkStorage());
+  }));
+  await p.click('.tab[data-view="home"]');
 
   // --- オフライン ---
   await p.goto(URL);

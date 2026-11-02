@@ -847,6 +847,7 @@ function renderPacks() {
 
 function renderSettings() {
   const s = db.settings;
+  renderSaveStatus();
   renderPacks();
   $("goal-new").textContent = s.newPerDay;
   $("set-appkb").checked = s.appKeyboard;
@@ -888,6 +889,19 @@ function changeGoal(diff) {
 }
 $("goal-minus").addEventListener("click", () => changeGoal(-1));
 $("goal-plus").addEventListener("click", () => changeGoal(1));
+
+// 最後に保存した時刻。勉強したのにこの時刻が古いままなら、端末が記録を保存できていない
+function renderSaveStatus() {
+  const last = (db.diag || []).slice(-1)[0];
+  const at = db.savedAt ? new Date(db.savedAt) : null;
+  const when = at
+    ? `${at.getMonth() + 1}/${at.getDate()} ${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`
+    : "まだありません";
+  let text = `最後に保存した時刻：${when}`;
+  if (last && last.persisted === false) text += "（この端末は記録を消さない設定にできませんでした）";
+  if ((db.diag || []).some((d) => d.restored)) text += "　※控えから記録をもどしたことがあります";
+  $("save-status").textContent = text;
+}
 
 $("backup-save").addEventListener("click", () => {
   // 画面が持っている記録ではなく、保存されている最新の記録を書き出す
@@ -976,6 +990,10 @@ show("home");
 // もう一方で学習した分を上書きして消してしまうため。
 function reloadDB() {
   db = loadDB();
+  rerender();
+}
+
+function rerender() {
   if (!$("view-home").hidden) renderHome();
   else if (!$("view-words").hidden) renderWords();
   else if (!$("view-settings").hidden) renderSettings();
@@ -993,6 +1011,13 @@ document.addEventListener("visibilitychange", () => {
 window.addEventListener("pageshow", (e) => {
   if (e.persisted) reloadDB();
 });
+
+// 控えの保存先を確かめる。localStorage が前の状態にもどっていたら控えからもどす
+const storageReady = checkStorage()
+  .then((restored) => {
+    if (restored) rerender();
+  })
+  .catch(() => {});
 
 // オフラインでも開けるようにする（https か localhost のときだけ動く）
 if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {

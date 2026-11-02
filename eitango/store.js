@@ -131,10 +131,85 @@ function saveDB() {
     const stored = readStored();
     if (stored && (stored.rev || 0) !== (db.rev || 0)) db = mergeDB(stored, db);
     db.rev = Math.max(db.rev || 0, (stored && stored.rev) || 0) + 1;
-    localStorage.setItem(STORE_KEY, JSON.stringify(db));
+    db.savedAt = Date.now();
+    const json = JSON.stringify(db);
+    localStorage.setItem(STORE_KEY, json);
+    idbPut(json).catch(() => {});
   } catch (e) {
     alert("保存できませんでした。端末の空き容量やブラウザの設定を確かめてください。");
   }
+}
+
+// ---------------------------------------------------------------
+// 控えの保存先（IndexedDB）
+// iPhone のホーム画面アプリでは、localStorage が前の状態にもどったり消えたりすることが
+// あるという報告がある。同じ記録を IndexedDB にも書いておき、開いたときに新しいほうを使う。
+// ---------------------------------------------------------------
+const IDB_NAME = "eitango";
+const IDB_STORE = "kv";
+
+function idbRequest(mode, run) {
+  return new Promise((ok, ng) => {
+    if (!window.indexedDB) return ng(new Error("no indexedDB"));
+    const open = indexedDB.open(IDB_NAME, 1);
+    open.onupgradeneeded = () => open.result.createObjectStore(IDB_STORE);
+    open.onerror = () => ng(open.error);
+    open.onsuccess = () => {
+      const idb = open.result;
+      const tx = idb.transaction(IDB_STORE, mode);
+      const req = run(tx.objectStore(IDB_STORE));
+      tx.oncomplete = () => {
+        idb.close();
+        ok(req.result);
+      };
+      tx.onerror = tx.onabort = () => {
+        idb.close();
+        ng(tx.error);
+      };
+    };
+  });
+}
+
+function idbPut(json) {
+  return idbRequest("readwrite", (store) => store.put(json, STORE_KEY));
+}
+
+function idbGet() {
+  return idbRequest("readonly", (store) => store.get(STORE_KEY));
+}
+
+// 開いたときに1回だけ呼ぶ。端末に記録を消さないよう頼み（ホーム画面アプリでは毎回頼む必要がある）、
+// 控えのほうが新しければ控えからもどす。何が起きたかは db.diag に残し、バックアップで見られるようにする。
+// もどしたら true を返す。
+async function checkStorage() {
+  let persisted = null;
+  try {
+    if (navigator.storage && navigator.storage.persist) persisted = await navigator.storage.persist();
+  } catch (e) {
+    persisted = null;
+  }
+  let backup = null;
+  try {
+    const json = await idbGet();
+    if (json) {
+      const data = JSON.parse(json);
+      if (data && Array.isArray(data.words)) backup = normalizeDB(data);
+    }
+  } catch (e) {
+    backup = null;
+  }
+  const stored = readStored();
+  const lsRev = stored ? stored.rev || 0 : null;
+  const idbRev = backup ? backup.rev || 0 : null;
+  const restored = !!backup && (lsRev === null || idbRev > lsRev);
+  if (restored) {
+    // localStorage が空なら控えをそのまま、古くなっていたら控えを主にして合わせる
+    db = stored ? mergeDB(stored, backup) : backup;
+    db.rev = Math.max(idbRev, lsRev || 0);
+  }
+  db.diag = [...(db.diag || []), { at: Date.now(), ls: lsRev, idb: idbRev, persisted, restored }].slice(-30);
+  saveDB();
+  return restored;
 }
 
 // 「1年」「中1」「1」などを 1 に。読めなければ 0（学年なし）
