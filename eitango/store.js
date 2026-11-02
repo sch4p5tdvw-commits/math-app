@@ -30,10 +30,19 @@ const SAMPLE_WORDS = [
 
 let db = loadDB();
 
-// 端末の時計での日付（YYYY-MM-DD）。日付の切りかわりは深夜0時
-function todayStr(d = new Date()) {
+// 「今日」が切りかわる時刻。夜12時をすぎて勉強しても、朝4時までは前の日の分として数える
+// （夜おそくの勉強が次の日に入って、前の日が空になり連続日数が切れてしまわないように）
+const DAY_START_HOUR = 4;
+
+// 日付を YYYY-MM-DD にする（端末の時計で）
+function dateStr(d) {
   const pad = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+// 学習の記録に使う「今日」の日付。朝4時までは前の日
+function todayStr(d = new Date()) {
+  return dateStr(new Date(d.getTime() - DAY_START_HOUR * 60 * 60 * 1000));
 }
 
 function newId() {
@@ -68,14 +77,20 @@ function freshDB() {
   };
 }
 
-function loadDB() {
-  let data = null;
+function readStored() {
   try {
-    data = JSON.parse(localStorage.getItem(STORE_KEY));
+    const data = JSON.parse(localStorage.getItem(STORE_KEY));
+    return data && Array.isArray(data.words) ? normalizeDB(data) : null;
   } catch (e) {
-    data = null;
+    return null;
   }
-  if (!data || !Array.isArray(data.words)) data = freshDB();
+}
+
+function loadDB() {
+  return readStored() || normalizeDB(freshDB());
+}
+
+function normalizeDB(data) {
   // あとから増えた設定項目は初期値でうめる
   data.settings = { ...DEFAULT_SETTINGS, ...(data.settings || {}) };
   if (!data.log || typeof data.log !== "object") data.log = {};
@@ -88,12 +103,113 @@ function loadDB() {
   return data;
 }
 
+// 2か所で開いていて、読みこんだあとに別の画面が保存していたときは、上書きせずに合わせる。
+// 単語は答えた回数が多いほう、日ごとの記録は数の大きいほうを残す。
+// （別の画面で増えた単語も残す。そのかわり、ここで消した単語が別の画面から戻ることはある）
+function mergeDB(stored, mine) {
+  const theirs = new Map(stored.words.map((w) => [w.id, w]));
+  const words = mine.words.map((w) => {
+    const s = theirs.get(w.id);
+    theirs.delete(w.id);
+    return s && (s.reps || 0) > (w.reps || 0) ? s : w;
+  });
+  words.push(...theirs.values());
+  const log = { ...stored.log };
+  for (const [day, v] of Object.entries(mine.log)) {
+    const s = log[day];
+    log[day] = s
+      ? Object.fromEntries(Object.keys({ ...s, ...v }).map((k) => [k, Math.max(s[k] || 0, v[k] || 0)]))
+      : v;
+  }
+  return { ...mine, words, log };
+}
+
+// 保存のたびに rev を1つ増やす。読みこんだときの rev と今の保存の rev がちがえば、
+// そのあいだに別の画面が保存している
 function saveDB() {
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(db));
+    const stored = readStored();
+    if (stored && (stored.rev || 0) !== (db.rev || 0)) db = mergeDB(stored, db);
+    db.rev = Math.max(db.rev || 0, (stored && stored.rev) || 0) + 1;
+    db.savedAt = Date.now();
+    const json = JSON.stringify(db);
+    localStorage.setItem(STORE_KEY, json);
+    idbPut(json).catch(() => {});
   } catch (e) {
     alert("保存できませんでした。端末の空き容量やブラウザの設定を確かめてください。");
   }
+}
+
+// ---------------------------------------------------------------
+// 控えの保存先（IndexedDB）
+// iPhone のホーム画面アプリでは、localStorage が前の状態にもどったり消えたりすることが
+// あるという報告がある。同じ記録を IndexedDB にも書いておき、開いたときに新しいほうを使う。
+// ---------------------------------------------------------------
+const IDB_NAME = "eitango";
+const IDB_STORE = "kv";
+
+function idbRequest(mode, run) {
+  return new Promise((ok, ng) => {
+    if (!window.indexedDB) return ng(new Error("no indexedDB"));
+    const open = indexedDB.open(IDB_NAME, 1);
+    open.onupgradeneeded = () => open.result.createObjectStore(IDB_STORE);
+    open.onerror = () => ng(open.error);
+    open.onsuccess = () => {
+      const idb = open.result;
+      const tx = idb.transaction(IDB_STORE, mode);
+      const req = run(tx.objectStore(IDB_STORE));
+      tx.oncomplete = () => {
+        idb.close();
+        ok(req.result);
+      };
+      tx.onerror = tx.onabort = () => {
+        idb.close();
+        ng(tx.error);
+      };
+    };
+  });
+}
+
+function idbPut(json) {
+  return idbRequest("readwrite", (store) => store.put(json, STORE_KEY));
+}
+
+function idbGet() {
+  return idbRequest("readonly", (store) => store.get(STORE_KEY));
+}
+
+// 開いたときに1回だけ呼ぶ。端末に記録を消さないよう頼み（ホーム画面アプリでは毎回頼む必要がある）、
+// 控えのほうが新しければ控えからもどす。何が起きたかは db.diag に残し、バックアップで見られるようにする。
+// もどしたら true を返す。
+async function checkStorage() {
+  let persisted = null;
+  try {
+    if (navigator.storage && navigator.storage.persist) persisted = await navigator.storage.persist();
+  } catch (e) {
+    persisted = null;
+  }
+  let backup = null;
+  try {
+    const json = await idbGet();
+    if (json) {
+      const data = JSON.parse(json);
+      if (data && Array.isArray(data.words)) backup = normalizeDB(data);
+    }
+  } catch (e) {
+    backup = null;
+  }
+  const stored = readStored();
+  const lsRev = stored ? stored.rev || 0 : null;
+  const idbRev = backup ? backup.rev || 0 : null;
+  const restored = !!backup && (lsRev === null || idbRev > lsRev);
+  if (restored) {
+    // localStorage が空なら控えをそのまま、古くなっていたら控えを主にして合わせる
+    db = stored ? mergeDB(stored, backup) : backup;
+    db.rev = Math.max(idbRev, lsRev || 0);
+  }
+  db.diag = [...(db.diag || []), { at: Date.now(), ls: lsRev, idb: idbRev, persisted, restored }].slice(-30);
+  saveDB();
+  return restored;
 }
 
 // 「1年」「中1」「1」などを 1 に。読めなければ 0（学年なし）

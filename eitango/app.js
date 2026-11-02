@@ -847,6 +847,7 @@ function renderPacks() {
 
 function renderSettings() {
   const s = db.settings;
+  renderSaveStatus();
   renderPacks();
   $("goal-new").textContent = s.newPerDay;
   $("set-appkb").checked = s.appKeyboard;
@@ -889,7 +890,22 @@ function changeGoal(diff) {
 $("goal-minus").addEventListener("click", () => changeGoal(-1));
 $("goal-plus").addEventListener("click", () => changeGoal(1));
 
+// 最後に保存した時刻。勉強したのにこの時刻が古いままなら、端末が記録を保存できていない
+function renderSaveStatus() {
+  const last = (db.diag || []).slice(-1)[0];
+  const at = db.savedAt ? new Date(db.savedAt) : null;
+  const when = at
+    ? `${at.getMonth() + 1}/${at.getDate()} ${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`
+    : "まだありません";
+  let text = `最後に保存した時刻：${when}`;
+  if (last && last.persisted === false) text += "（この端末は記録を消さない設定にできませんでした）";
+  if ((db.diag || []).some((d) => d.restored)) text += "　※控えから記録をもどしたことがあります";
+  $("save-status").textContent = text;
+}
+
 $("backup-save").addEventListener("click", () => {
+  // 画面が持っている記録ではなく、保存されている最新の記録を書き出す
+  db = loadDB();
   downloadText(`eitango-backup-${todayStr()}.json`, JSON.stringify(db), "application/json");
 });
 $("backup-load").addEventListener("click", () => $("backup-file").click());
@@ -969,10 +985,39 @@ $("csv-file").addEventListener("change", async (e) => {
 // ---------------------------------------------------------------
 show("home");
 
-// ホーム画面に置いたまま次の日に開いたときも、今日の数字に直す
-document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && !$("view-home").hidden) renderHome();
+// ほかの画面が保存した記録を読みなおす。ホーム画面のアプリとブラウザのタブのように
+// 2か所で開いていると、古い記録を持ったままの画面があとで保存したときに、
+// もう一方で学習した分を上書きして消してしまうため。
+function reloadDB() {
+  db = loadDB();
+  rerender();
+}
+
+function rerender() {
+  if (!$("view-home").hidden) renderHome();
+  else if (!$("view-words").hidden) renderWords();
+  else if (!$("view-settings").hidden) renderSettings();
+}
+
+// 別のタブや画面が保存したとき
+window.addEventListener("storage", (e) => {
+  if (e.key === STORE_KEY || e.key === null) reloadDB();
 });
+// アプリを前に出したとき（裏にいる間は storage の知らせが届かないことがある）。
+// ホーム画面に置いたまま次の日に開いたときも、ここで今日の数字に直る
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") reloadDB();
+});
+window.addEventListener("pageshow", (e) => {
+  if (e.persisted) reloadDB();
+});
+
+// 控えの保存先を確かめる。localStorage が前の状態にもどっていたら控えからもどす
+const storageReady = checkStorage()
+  .then((restored) => {
+    if (restored) rerender();
+  })
+  .catch(() => {});
 
 // オフラインでも開けるようにする（https か localhost のときだけ動く）
 if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
