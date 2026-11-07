@@ -242,7 +242,11 @@
           <input type="date" id="shipment-date" required>
         </label>
         <div id="shipment-store-rows" class="ship-stores"></div>
-        <div class="sale-total-preview">出荷合計: <strong id="shipment-total">0点</strong></div>
+        <div class="sale-total-preview">この商品: <strong id="shipment-total">0点・¥0</strong></div>
+        <div class="ship-day-total">
+          <span id="shipment-day-label">その日の出荷</span>
+          <strong id="shipment-day-total">0点・¥0</strong>
+        </div>
         <button type="button" id="btn-shipment-commit" class="btn btn-primary btn-big">
           出荷を記録する
         </button>
