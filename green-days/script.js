@@ -8,7 +8,7 @@
 
 // 画面に出す版。直したはずの動きが変わらないとき、スマホが古いものを
 // 掴んでいるのか、直し方が足りないのかを切り分けるために使う。
-const APP_VERSION = "2026-10-29c";
+const APP_VERSION = "2026-11-07a";
 
 const STORAGE_KEY = "greenDays.v1";
 const SNAPSHOT_KEY = "greenDays.snapshots.v1";
@@ -1011,6 +1011,7 @@ document.getElementById("restock-form").addEventListener("submit", (e) => {
     productName: product.name,
     type,
     qty,
+    unitPrice: Number(product.price) || 0,
     date,
     memo,
     createdAt: Date.now(),
@@ -1062,6 +1063,17 @@ function parseAliasInput(text) {
 
 function pad2(n) {
   return String(n).padStart(2, "0");
+}
+
+const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+
+/** 「2026-11-07」を「11月7日（土）」に。曜日があると日付を追いやすい */
+function formatDateLabel(date) {
+  const m = String(date).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return String(date || "");
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  if (Number.isNaN(d.getTime())) return String(date);
+  return `${Number(m[2])}月${Number(m[3])}日（${WEEKDAYS[d.getDay()]}）`;
 }
 
 /** 行から日付を取り出す。見つからなければ null */
@@ -1977,6 +1989,35 @@ let shipmentQty = {};
 /** 数量の選択肢。実際の出荷は5〜20点が多いので、そこを押しやすくしている */
 const SHIP_CHOICES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 15, 16, 18, 20, 24, 30];
 
+/**
+ * 出荷1件分の金額。出荷したときの値段を記録に持たせているので、
+ * あとで値段を変えても過去の出荷額は動かない。古い記録には値段が
+ * 入っていないので、そのときだけ今の値段で代用する。
+ */
+function restockAmount(r) {
+  if (!r || r.type !== "in") return 0;
+  const unit = Number(r.unitPrice);
+  if (Number.isFinite(unit)) return unit * r.qty;
+  const product = findProduct(r.productId);
+  return (product ? Number(product.price) || 0 : 0) * r.qty;
+}
+
+/** その日に出荷した点数と金額 */
+function shipmentTotalsForDate(date, extra) {
+  let qty = 0;
+  let amount = 0;
+  db.restocks.forEach((r) => {
+    if (r.type !== "in" || r.date !== date) return;
+    qty += r.qty;
+    amount += restockAmount(r);
+  });
+  if (extra) {
+    qty += extra.qty;
+    amount += extra.amount;
+  }
+  return { qty, amount };
+}
+
 /** 最近出荷したものを先に並べる */
 function productsByRecentShipment() {
   const lastShipped = new Map();
@@ -2009,6 +2050,7 @@ document.getElementById("btn-open-shipment").addEventListener("click", () => {
 });
 
 document.getElementById("btn-shipment-back").addEventListener("click", () => showScreen("stock"));
+document.getElementById("shipment-date").addEventListener("change", updateShipmentTotal);
 document.getElementById("btn-shipment-change").addEventListener("click", () => {
   shipmentProductId = "";
   shipmentQty = {};
@@ -2163,8 +2205,20 @@ function buildShipmentStoreRow(store) {
 }
 
 function updateShipmentTotal() {
-  const total = db.stores.reduce((sum, s) => sum + (Number(shipmentQty[s.id]) || 0), 0);
-  document.getElementById("shipment-total").textContent = `${total}点`;
+  const product = findProduct(shipmentProductId);
+  const unit = product ? Number(product.price) || 0 : 0;
+  const qty = db.stores.reduce((sum, s) => sum + (Number(shipmentQty[s.id]) || 0), 0);
+
+  document.getElementById("shipment-total").textContent =
+    `${qty}点・${formatYen(qty * unit)}`;
+
+  // 商品を変えながら何度も出荷するので、その日いくら出したかが
+  // 入力のたびに見えるようにする。いま入れている分も足して出す。
+  const date = document.getElementById("shipment-date").value || todayStr();
+  const day = shipmentTotalsForDate(date, { qty, amount: qty * unit });
+  document.getElementById("shipment-day-total").textContent =
+    `${day.qty}点・${formatYen(day.amount)}`;
+  document.getElementById("shipment-day-label").textContent = `${formatDateLabel(date)}の出荷`;
 }
 
 document.getElementById("btn-shipment-commit").addEventListener("click", () => {
@@ -2194,6 +2248,7 @@ document.getElementById("btn-shipment-commit").addEventListener("click", () => {
       productName: product.name,
       type: "in",
       qty: entry.qty,
+      unitPrice: Number(product.price) || 0,
       date,
       memo: "出荷",
       createdAt: now + i,
@@ -2203,7 +2258,12 @@ document.getElementById("btn-shipment-commit").addEventListener("click", () => {
 
   saveDB();
   const total = entries.reduce((sum, e) => sum + e.qty, 0);
-  showToast(`${product.name} を ${entries.length}店舗・計${total}点 出荷しました`);
+  // 商品を変えながら続けて出すので、記録するたびにその日の合計を知らせる
+  const day = shipmentTotalsForDate(date);
+  showToast(
+    `${product.name} を ${entries.length}店舗・計${total}点 出荷しました\n` +
+      `${formatDateLabel(date)}の出荷 ${day.qty}点・${formatYen(day.amount)}`
+  );
 
   // 続けて別の商品を出荷できるよう、商品選びに戻す
   shipmentProductId = "";
@@ -2466,17 +2526,22 @@ let historyKind = "sales";
 let historyStoreFilter = "";
 let historyLimit = 50;
 const HISTORY_PAGE = 50;
+// 出荷は日付でくくって見せるので、件数ではなく日数で区切る
+let historyDayLimit = 10;
+const HISTORY_DAY_PAGE = 10;
 
 document.querySelectorAll("#history-kind-chips .chip").forEach((chip) => {
   chip.addEventListener("click", () => {
     historyKind = chip.dataset.kind;
     historyLimit = HISTORY_PAGE;
+    historyDayLimit = HISTORY_DAY_PAGE;
     renderHistory();
   });
 });
 
 document.getElementById("btn-history-more").addEventListener("click", () => {
   historyLimit += HISTORY_PAGE;
+  historyDayLimit += HISTORY_DAY_PAGE;
   renderHistory();
 });
 
@@ -2497,6 +2562,7 @@ function renderHistoryStoreChips() {
     chip.addEventListener("click", () => {
       historyStoreFilter = id;
       historyLimit = HISTORY_PAGE;
+      historyDayLimit = HISTORY_DAY_PAGE;
       renderHistory();
     });
     row.appendChild(chip);
@@ -2535,16 +2601,95 @@ function renderHistory() {
     return;
   }
 
+  const more = document.getElementById("btn-history-more");
+
+  if (!showingSales) {
+    // 出荷は「その日どの店に何を何点出したか」をまとめて見たいので、
+    // 日付でくくり、その中を店舗ごとに並べる
+    const days = groupRestocksByDate(rows);
+    const shown = days.slice(0, historyDayLimit);
+    shown.forEach((day) => list.appendChild(buildRestockDayBlock(day)));
+    const left = days.length - shown.length;
+    more.hidden = left === 0;
+    more.textContent = `さらに表示（あと${left}日分）`;
+    return;
+  }
+
   rows.slice(0, historyLimit).forEach((r) => {
-    list.appendChild(
-      showingSales ? buildSaleHistoryItem(r) : buildRestockHistoryItem(r)
-    );
+    list.appendChild(buildSaleHistoryItem(r));
   });
 
-  const more = document.getElementById("btn-history-more");
   const remaining = rows.length - Math.min(historyLimit, rows.length);
   more.hidden = remaining === 0;
   more.textContent = `さらに表示（あと${remaining}件）`;
+}
+
+/** 日付 → 店舗 の二段でまとめる。どちらも新しい順・登録順 */
+function groupRestocksByDate(rows) {
+  const byDate = new Map();
+  rows.forEach((r) => {
+    const date = r.date || "";
+    if (!byDate.has(date)) byDate.set(date, new Map());
+    const byStore = byDate.get(date);
+    const key = r.storeId || r.storeName || "";
+    if (!byStore.has(key)) byStore.set(key, { name: r.storeName || "―", items: [] });
+    byStore.get(key).items.push(r);
+  });
+
+  return [...byDate.entries()]
+    .sort((a, b) => (a[0] < b[0] ? 1 : a[0] > b[0] ? -1 : 0))
+    .map(([date, byStore]) => {
+      const stores = [...byStore.values()].map((store) => ({
+        name: store.name,
+        items: store.items,
+        qty: store.items.reduce((sum, r) => sum + (r.type === "in" ? r.qty : 0), 0),
+        amount: store.items.reduce((sum, r) => sum + restockAmount(r), 0),
+      }));
+      return {
+        date,
+        stores,
+        qty: stores.reduce((sum, st) => sum + st.qty, 0),
+        amount: stores.reduce((sum, st) => sum + st.amount, 0),
+      };
+    });
+}
+
+function buildRestockDayBlock(day) {
+  const block = document.createElement("div");
+  block.className = "ship-day";
+
+  const head = document.createElement("div");
+  head.className = "ship-day-head";
+  const label = document.createElement("span");
+  label.className = "ship-day-date";
+  label.textContent = formatDateLabel(day.date);
+  head.appendChild(label);
+  const sum = document.createElement("span");
+  sum.className = "ship-day-sum";
+  sum.textContent = `${day.qty}点・${formatYen(day.amount)}`;
+  head.appendChild(sum);
+  block.appendChild(head);
+
+  day.stores.forEach((store) => {
+    const group = document.createElement("div");
+    group.className = "ship-day-store";
+
+    const storeHead = document.createElement("div");
+    storeHead.className = "ship-day-store-head";
+    const storeName = document.createElement("span");
+    storeName.textContent = store.name;
+    storeHead.appendChild(storeName);
+    const storeSum = document.createElement("span");
+    storeSum.className = "ship-day-store-sum";
+    storeSum.textContent = `${store.qty}点・${formatYen(store.amount)}`;
+    storeHead.appendChild(storeSum);
+    group.appendChild(storeHead);
+
+    store.items.forEach((r) => group.appendChild(buildRestockHistoryItem(r)));
+    block.appendChild(group);
+  });
+
+  return block;
 }
 
 function buildSaleHistoryItem(s) {
@@ -2558,13 +2703,15 @@ function buildSaleHistoryItem(s) {
 }
 
 function buildRestockHistoryItem(r) {
-  // 店に納めるので、こちらから見れば「出荷」。memo の "出荷" は重ねない
-  const kind = r.type === "in" ? "出荷" : "棚卸し";
+  // 日付と店舗は上の見出しに出ているので、ここは品目と数だけにする
   const memo = r.memo && r.memo !== "出荷" ? `・${r.memo}` : "";
+  const sub = r.type === "in"
+    ? `${formatYen(restockAmount(r))}${memo}`
+    : `棚卸し${memo}`;
   return buildListItem({
-    title: `${r.storeName || "―"}　${r.productName}`,
-    sub: `${r.date}・${kind}${memo}`,
-    value: r.type === "in" ? `+${r.qty}点` : `→ ${r.qty}点`,
+    title: r.productName,
+    sub,
+    value: r.type === "in" ? `${r.qty}点` : `→ ${r.qty}点`,
     onClick: () => openRecordEdit("restock", r.id),
     onDelete: () => deleteRestock(r.id),
   });

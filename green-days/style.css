@@ -721,11 +721,16 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--green-500);
   background: var(--ink);
   color: #fff;
   padding: 10px 18px;
-  border-radius: 999px;
+  border-radius: 18px;
   font-size: 13px;
   font-weight: 600;
   box-shadow: 0 4px 14px rgba(0,0,0,0.2);
   z-index: 50;
+  /* 出荷のあとは「その日の合計」を2行目に出すので、改行を活かす */
+  white-space: pre-line;
+  text-align: center;
+  max-width: calc(100% - 32px);
+  line-height: 1.5;
 }
 .toast[hidden] { display: none; }
 
@@ -743,3 +748,50 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--green-500);
   font-size: 13px;
   line-height: 1.6;
 }
+
+/* 出荷入力：その日いくら出したかを、入力しながら見えるようにする欄 */
+.ship-day-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 0 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--green-100);
+  color: var(--green-900);
+  font-size: 13.5px;
+}
+.ship-day-total strong { font-size: 16px; }
+
+/* 出荷の履歴：日付でくくり、その中を店舗ごとに並べる */
+.ship-day { margin-bottom: 18px; }
+.ship-day-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 2px;
+  border-bottom: 2px solid var(--green-600);
+  margin-bottom: 8px;
+}
+.ship-day-date { font-size: 15px; font-weight: 800; color: var(--green-900); }
+.ship-day-sum { font-size: 13.5px; font-weight: 700; color: var(--green-700); }
+
+.ship-day-store { margin: 0 0 10px; }
+.ship-day-store-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 10px;
+  border-radius: 8px 8px 0 0;
+  background: var(--green-100);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--green-900);
+}
+.ship-day-store-sum { font-weight: 600; color: var(--ink-soft); }
+.ship-day-store .list-item { border-radius: 0; margin: 0; }
+.ship-day-store .list-item + .list-item { border-top: 1px solid var(--border); }
+.ship-day-store .list-item:last-child { border-radius: 0 0 8px 8px; }
